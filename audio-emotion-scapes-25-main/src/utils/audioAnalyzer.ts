@@ -1,13 +1,13 @@
 /**
- * Audio Analyzer with TensorFlow.js ML Model Integration
+ * Audio Analyzer with ONNX Runtime Web ML Model Integration
  * 
  * This module handles:
  * 1. Audio feature extraction (ZCR, RMS, MFCCs) to match training parameters
- * 2. TensorFlow.js model loading and caching
+ * 2. ONNX Runtime Web model loading and caching
  * 3. Emotion prediction using the trained LSTM model
  */
 
-import * as tf from '@tensorflow/tfjs';
+import * as ort from 'onnxruntime-web';
 import Meyda from 'meyda';
 
 // ============================================================================
@@ -36,11 +36,11 @@ const NUM_MFCCS = 13;
 const TARGET_SEQ_LENGTH = 352; // Number of frames expected by the model
 const NUM_FEATURES = 15; // ZCR (1) + RMS (1) + MFCCs (13)
 
-// Model paths
+// Model paths - now using ONNX files directly!
 const MODEL_PATHS: Record<Gender, string> = {
-  female: '/models/tfjs/female/model.json',
-  male: '/models/tfjs/male/model.json',
-  unknown: '/models/tfjs/combined/model.json',
+  female: '/models/onnx/emotion_female.onnx',
+  male: '/models/onnx/emotion_male.onnx',
+  unknown: '/models/onnx/emotion_combined.onnx',
 };
 
 // ============================================================================
@@ -48,28 +48,37 @@ const MODEL_PATHS: Record<Gender, string> = {
 // ============================================================================
 
 // Cache loaded models to avoid reloading
-const modelCache: Map<Gender, tf.GraphModel> = new Map();
+const modelCache: Map<Gender, ort.InferenceSession> = new Map();
 
 /**
- * Load a TensorFlow.js model for the specified gender
+ * Load an ONNX model for the specified gender
  */
-export async function loadModel(gender: Gender): Promise<tf.GraphModel> {
+export async function loadModel(gender: Gender): Promise<ort.InferenceSession> {
   // Check cache first
   if (modelCache.has(gender)) {
     return modelCache.get(gender)!;
   }
 
   const modelPath = MODEL_PATHS[gender];
-  console.log(`Loading emotion model for ${gender} from ${modelPath}...`);
+  console.log(`Loading ONNX emotion model for ${gender} from ${modelPath}...`);
 
   try {
-    const model = await tf.loadGraphModel(modelPath);
-    modelCache.set(gender, model);
-    console.log(`Model loaded successfully for ${gender}`);
-    return model;
+    // Configure ONNX Runtime Web
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/';
+    
+    const session = await ort.InferenceSession.create(modelPath, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    
+    modelCache.set(gender, session);
+    console.log(`ONNX model loaded successfully for ${gender}`);
+    console.log(`Input names: ${session.inputNames}`);
+    console.log(`Output names: ${session.outputNames}`);
+    return session;
   } catch (error) {
-    console.error(`Failed to load model for ${gender}:`, error);
-    throw new Error(`Could not load emotion model for ${gender}. Make sure the model files exist at ${modelPath}`);
+    console.error(`Failed to load ONNX model for ${gender}:`, error);
+    throw new Error(`Could not load emotion model for ${gender}. Make sure the model file exists at ${modelPath}`);
   }
 }
 
@@ -257,16 +266,16 @@ export interface PredictionResult {
 }
 
 /**
- * Predict emotion from audio features using the TensorFlow.js model
+ * Predict emotion from audio features using the ONNX Runtime Web model
  */
 export async function predictEmotion(
   audioBlob: Blob,
   gender: Gender = 'unknown'
 ): Promise<PredictionResult> {
-  console.log(`Predicting emotion for ${gender} voice...`);
+  console.log(`Predicting emotion for ${gender} voice using ONNX Runtime...`);
   
   // Load model
-  const model = await loadModel(gender);
+  const session = await loadModel(gender);
   
   // Decode audio
   const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
@@ -283,18 +292,35 @@ export async function predictEmotion(
   const features = extractFeatures(audioData, sampleRate);
   console.log(`Extracted ${features.length} frames with ${features[0]?.length || 0} features each`);
   
-  // Convert to tensor: (1, seq_length, features)
-  const inputArray = features.map(f => Array.from(f));
-  const inputTensor = tf.tensor3d([inputArray], [1, TARGET_SEQ_LENGTH, NUM_FEATURES]);
+  // Flatten features into a single Float32Array for ONNX
+  // Shape: [1, 352, 15] -> flattened
+  const flattenedData = new Float32Array(1 * TARGET_SEQ_LENGTH * NUM_FEATURES);
+  for (let i = 0; i < features.length; i++) {
+    for (let j = 0; j < NUM_FEATURES; j++) {
+      flattenedData[i * NUM_FEATURES + j] = features[i][j];
+    }
+  }
+  
+  // Create ONNX tensor
+  const inputTensor = new ort.Tensor('float32', flattenedData, [1, TARGET_SEQ_LENGTH, NUM_FEATURES]);
+  
+  // Get the input name from the model
+  const inputName = session.inputNames[0];
   
   // Run inference
-  const outputTensor = model.predict(inputTensor) as tf.Tensor;
-  const logitsData = await outputTensor.data();
-  const logits: number[] = Array.from(logitsData) as number[];
+  const feeds: Record<string, ort.Tensor> = {};
+  feeds[inputName] = inputTensor;
+  
+  const results = await session.run(feeds);
+  
+  // Get output
+  const outputName = session.outputNames[0];
+  const outputTensor = results[outputName];
+  const logits = outputTensor.data as Float32Array;
   
   // Apply softmax to get probabilities
-  const maxLogit = Math.max(...logits);
-  const expLogits = logits.map(l => Math.exp(l - maxLogit));
+  const maxLogit = Math.max(...Array.from(logits));
+  const expLogits = Array.from(logits).map(l => Math.exp(l - maxLogit));
   const sumExp = expLogits.reduce((a, b) => a + b, 0);
   const probabilities = expLogits.map(e => e / sumExp);
   
@@ -309,9 +335,7 @@ export async function predictEmotion(
     probabilityMap[EMOTION_MAP[i]] = probabilities[i];
   }
   
-  // Cleanup tensors
-  inputTensor.dispose();
-  outputTensor.dispose();
+  // Cleanup
   await audioContext.close();
   
   console.log(`Predicted: ${emotion} with ${(confidence * 100).toFixed(1)}% confidence`);
@@ -424,11 +448,9 @@ export const analyzeAudio = async (audioBlob: Blob): Promise<AudioFeatures> => {
 };
 
 /**
- * Legacy function: Predict mood using the ML model
- * Maps 6 emotions to 5 moods for backward compatibility
+ * Legacy function: Predict mood using heuristics (fallback)
  */
 export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
-  // This is now a fallback - the main prediction uses predictEmotion()
   const { energy, spectralCentroid, spectralFlatness, zcr, rms } = features;
   
   if (energy > 0.7) {
