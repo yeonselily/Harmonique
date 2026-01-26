@@ -76,14 +76,16 @@ const Index = () => {
     switch (selectedMood) {
       case 'happy': 
         return 'bg-gradient-to-r from-yellow-400/30 to-amber-500/30';
-      case 'calm': 
-        return 'bg-gradient-to-r from-blue-400/30 to-teal-500/30';
-      case 'energetic': 
-        return 'bg-gradient-to-r from-orange-400/30 to-red-500/30';
       case 'sad': 
         return 'bg-gradient-to-r from-indigo-400/30 to-purple-500/30';
       case 'angry': 
         return 'bg-gradient-to-r from-red-500/30 to-rose-600/30';
+      case 'fear': 
+        return 'bg-gradient-to-r from-purple-400/30 to-violet-500/30';
+      case 'disgust': 
+        return 'bg-gradient-to-r from-green-400/30 to-emerald-500/30';
+      case 'neutral': 
+        return 'bg-gradient-to-r from-gray-400/30 to-slate-500/30';
       default: 
         return 'bg-gradient-to-r from-blue-500/20 to-purple-500/20';
     }
