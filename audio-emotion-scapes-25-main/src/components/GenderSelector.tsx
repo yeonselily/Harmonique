@@ -1,16 +1,13 @@
 import React from 'react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Gender } from '@/utils/audioAnalyzer';
 
 type GenderOption = {
   value: Gender;
   label: string;
-  description: string;
-  accuracy: string;
-  icon: React.ComponentType<{ className?: string }>;
+  accuracy: number;
 };
 
 type GenderSelectorProps = {
@@ -24,32 +21,26 @@ const GenderSelector = ({ selectedGender, onGenderSelect, compact = false }: Gen
     {
       value: 'female',
       label: 'Female',
-      description: 'Optimized for female voices',
-      accuracy: '88% accuracy',
-      icon: User,
+      accuracy: 88,
     },
     {
       value: 'male',
       label: 'Male',
-      description: 'Optimized for male voices',
-      accuracy: '68% accuracy',
-      icon: User,
+      accuracy: 68,
     },
     {
       value: 'unknown',
-      label: 'Any / Prefer not to say',
-      description: 'Gender-neutral model',
-      accuracy: 'Lower accuracy',
-      icon: Users,
+      label: 'Any',
+      accuracy: 78, // Average of 88% and 68%
     },
   ];
 
   if (compact) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">Voice type:</span>
+        <span className="text-sm text-muted-foreground">Voice:</span>
         <RadioGroup
-          className="flex gap-2"
+          className="flex gap-1"
           value={selectedGender}
           onValueChange={(value) => onGenderSelect(value as Gender)}
         >
@@ -69,7 +60,7 @@ const GenderSelector = ({ selectedGender, onGenderSelect, compact = false }: Gen
                     : "bg-secondary/30 hover:bg-secondary/50 border-transparent"
                 )}
               >
-                {option.label}
+                {option.label} ({option.accuracy}%)
               </Label>
             </div>
           ))}
@@ -81,20 +72,19 @@ const GenderSelector = ({ selectedGender, onGenderSelect, compact = false }: Gen
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Select Voice Type</h4>
+        <h4 className="text-sm font-medium">Voice Type</h4>
         <span className="text-xs text-muted-foreground">
-          For better accuracy
+          Select for better accuracy
         </span>
       </div>
       
       <RadioGroup
-        className="grid grid-cols-3 gap-3"
+        className="grid grid-cols-3 gap-2"
         value={selectedGender}
         onValueChange={(value) => onGenderSelect(value as Gender)}
       >
         {options.map((option) => {
           const isSelected = selectedGender === option.value;
-          const Icon = option.icon;
           
           return (
             <div key={option.value}>
@@ -113,10 +103,6 @@ const GenderSelector = ({ selectedGender, onGenderSelect, compact = false }: Gen
                     : "border-muted bg-secondary/10"
                 )}
               >
-                <Icon className={cn(
-                  "h-5 w-5 mb-1",
-                  isSelected ? "text-primary" : "text-muted-foreground"
-                )} />
                 <span className={cn(
                   "text-sm font-medium",
                   isSelected ? "text-primary" : ""
@@ -124,20 +110,17 @@ const GenderSelector = ({ selectedGender, onGenderSelect, compact = false }: Gen
                   {option.label}
                 </span>
                 <span className={cn(
-                  "text-xs mt-0.5",
-                  isSelected ? "text-primary/80" : "text-muted-foreground"
+                  "text-lg font-bold mt-1",
+                  isSelected ? "text-primary" : "text-muted-foreground",
+                  option.accuracy >= 85 ? "text-green-500" : option.accuracy >= 70 ? "text-yellow-500" : "text-orange-500"
                 )}>
-                  {option.accuracy}
+                  {option.accuracy}%
                 </span>
               </Label>
             </div>
           );
         })}
       </RadioGroup>
-      
-      <p className="text-xs text-muted-foreground text-center">
-        The female model has the highest accuracy. Select "Any" if you prefer not to specify.
-      </p>
     </div>
   );
 };

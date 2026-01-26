@@ -19,11 +19,11 @@ type EmotionDetectorProps = {
   onEmotionDetected: (mood: Mood) => void;
 };
 
-// Model accuracy by gender
+// Model accuracy by gender (unknown = average of male and female)
 const MODEL_ACCURACY: Record<Gender, number> = {
   female: 0.88,
   male: 0.68,
-  unknown: 0.55,
+  unknown: 0.78, // Average of 88% and 68%
 };
 
 const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps) => {

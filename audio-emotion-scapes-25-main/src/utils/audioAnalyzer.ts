@@ -353,14 +353,14 @@ export async function predictEmotion(
 
 import { type Mood } from '@/components/MoodSelector';
 
-// Map ML emotions to app moods
+// Map ML emotions to app moods (now 1:1 since Mood matches Emotion)
 const EMOTION_TO_MOOD: Record<Emotion, Mood> = {
   angry: 'angry',
-  disgust: 'angry', // Map disgust to angry as closest mood
-  fear: 'sad', // Map fear to sad as closest mood
+  disgust: 'disgust',
+  fear: 'fear',
   happy: 'happy',
   sad: 'sad',
-  neutral: 'calm', // Map neutral to calm
+  neutral: 'neutral',
 };
 
 export interface AudioFeatures {
@@ -457,7 +457,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     if (spectralCentroid > 0.6 && zcr > 0.6) {
       return 'angry';
     } else {
-      return 'energetic';
+      return 'fear'; // High energy but not angry = anxious/fear
     }
   }
   
@@ -465,7 +465,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     if (spectralCentroid < 0.4 && spectralFlatness < 0.3) {
       return 'sad';
     } else {
-      return 'calm';
+      return 'neutral'; // Low energy, balanced = neutral
     }
   }
   
@@ -473,7 +473,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     return 'happy';
   }
   
-  return 'calm';
+  return 'neutral';
 };
 
 /**
