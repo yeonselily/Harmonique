@@ -10,6 +10,7 @@ import {
   predictMoodWithML, 
   preloadModels,
   type AudioFeatures, 
+  type MLFeatures,
   type Gender,
   type Emotion 
 } from '@/utils/audioAnalyzer';
@@ -32,7 +33,7 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
   const [detectedEmotion, setDetectedEmotion] = useState<Emotion | null>(null);
   const [detectedMood, setDetectedMood] = useState<Mood | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
-  const [audioFeatures, setAudioFeatures] = useState<AudioFeatures | null>(null);
+  const [mlFeatures, setMlFeatures] = useState<MLFeatures | null>(null);
   const [selectedGender, setSelectedGender] = useState<Gender>('unknown');
   const [modelError, setModelError] = useState<string | null>(null);
 
@@ -68,10 +69,6 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
     });
 
     try {
-      // Extract audio features for display
-      const features = await analyzeAudio(audioBlob);
-      setAudioFeatures(features);
-      
       // Try ML prediction first
       let mood: Mood;
       let emotionConfidence: number;
@@ -85,18 +82,23 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
           emotion = mlResult.emotion;
           
           setDetectedEmotion(emotion);
+          setMlFeatures(mlResult.mlFeatures);
         } catch (mlError) {
           console.warn('ML prediction failed, using fallback:', mlError);
           // Fallback to heuristic
+          const features = await analyzeAudio(audioBlob);
           const { predictMoodFromFeatures } = await import('@/utils/audioAnalyzer');
           mood = predictMoodFromFeatures(features);
           emotionConfidence = 0.5;
+          setMlFeatures(null);
         }
       } else {
         // Use heuristic fallback
+        const features = await analyzeAudio(audioBlob);
         const { predictMoodFromFeatures } = await import('@/utils/audioAnalyzer');
         mood = predictMoodFromFeatures(features);
         emotionConfidence = 0.5;
+        setMlFeatures(null);
       }
       
       setDetectedMood(mood);
@@ -235,17 +237,16 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
                     </div>
                   )}
                   
-                  {audioFeatures && (
+                  {mlFeatures && (
                     <div className="mt-4 border-t pt-4 text-left">
                       <div className="flex items-center gap-1 mb-2 text-sm font-medium">
                         <BarChart className="h-4 w-4" />
-                        <span>Extracted Audio Features</span>
+                        <span>Model Input Features</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-4">
-                        <FeatureBar label="Energy" value={audioFeatures.energy} />
-                        <FeatureBar label="Brightness" value={audioFeatures.spectralCentroid} />
-                        <FeatureBar label="Complexity" value={1 - audioFeatures.spectralFlatness} />
-                        <FeatureBar label="Intensity" value={audioFeatures.rms} />
+                      <div className="space-y-1">
+                        <FeatureBar label="Voice Texture" value={mlFeatures.zcr} />
+                        <FeatureBar label="Loudness" value={mlFeatures.rms} />
+                        <FeatureBar label="Vocal Tone" value={mlFeatures.mfccAvg} />
                       </div>
                     </div>
                   )}

@@ -259,10 +259,18 @@ export function extractFeatures(audioData: Float32Array, sampleRate: number): Fl
 // Emotion Prediction
 // ============================================================================
 
+// ML features that are actually used by the model
+export interface MLFeatures {
+  zcr: number;        // Zero Crossing Rate (average across frames)
+  rms: number;        // Root Mean Square / Loudness (average across frames)
+  mfccAvg: number;    // Average of all MFCC coefficients (summary)
+}
+
 export interface PredictionResult {
   emotion: Emotion;
   confidence: number;
   probabilities: Record<Emotion, number>;
+  mlFeatures: MLFeatures;  // Actual features used by the model
 }
 
 /**
@@ -335,15 +343,34 @@ export async function predictEmotion(
     probabilityMap[EMOTION_MAP[i]] = probabilities[i];
   }
   
+  // Calculate average ML features for display
+  let zcrSum = 0, rmsSum = 0, mfccSum = 0;
+  for (const frame of features) {
+    zcrSum += frame[0];  // ZCR is at index 0
+    rmsSum += frame[1];  // RMS is at index 1
+    // MFCCs are at indices 2-14
+    for (let j = 2; j < NUM_FEATURES; j++) {
+      mfccSum += Math.abs(frame[j]);  // Use absolute value for summary
+    }
+  }
+  const numFrames = features.length;
+  const mlFeatures: MLFeatures = {
+    zcr: Math.min(1, zcrSum / numFrames),  // Already normalized 0-1
+    rms: Math.min(1, rmsSum / numFrames * 5),  // Scale up for visibility
+    mfccAvg: Math.min(1, Math.abs(mfccSum / (numFrames * NUM_MFCCS)) / 50),  // Normalize MFCC average
+  };
+  
   // Cleanup
   await audioContext.close();
   
   console.log(`Predicted: ${emotion} with ${(confidence * 100).toFixed(1)}% confidence`);
+  console.log(`ML Features - ZCR: ${mlFeatures.zcr.toFixed(3)}, RMS: ${mlFeatures.rms.toFixed(3)}, MFCC: ${mlFeatures.mfccAvg.toFixed(3)}`);
   
   return {
     emotion,
     confidence,
     probabilities: probabilityMap,
+    mlFeatures,
   };
 }
 
@@ -482,13 +509,14 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
 export const predictMoodWithML = async (
   audioBlob: Blob,
   gender: Gender = 'unknown'
-): Promise<{ mood: Mood; confidence: number; emotion: Emotion }> => {
+): Promise<{ mood: Mood; confidence: number; emotion: Emotion; mlFeatures: MLFeatures }> => {
   const result = await predictEmotion(audioBlob, gender);
   
   return {
     mood: EMOTION_TO_MOOD[result.emotion],
     confidence: result.confidence,
     emotion: result.emotion,
+    mlFeatures: result.mlFeatures,
   };
 };
 
