@@ -265,7 +265,7 @@ const Index = () => {
       <footer className="bg-background py-6 border-t border-border">
         <div className="container text-center text-sm text-muted-foreground">
           <p>Harmonique - Transform your emotions into music</p>
-          <p className="text-xs mt-2">Powered by Web Audio API, Meyda.js, and Tone.js</p>
+          <p className="text-xs mt-2">Powered by Web Audio API, Meyda.js, Tone.js, and ONNX Runtime</p>
         </div>
       </footer>
       
