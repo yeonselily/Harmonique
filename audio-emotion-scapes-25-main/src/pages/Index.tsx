@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Headphones, Mic, Share2, AudioWaveform, LogIn, LogOut, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ const Index = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   
   const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
   
   useEffect(() => {
     const setupAudioEngine = async () => {
@@ -125,10 +127,15 @@ const Index = () => {
             <div className="flex items-center gap-3">
               {user ? (
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => navigate('/profile')}
+                    className="flex items-center gap-2"
+                  >
                     <User className="h-4 w-4" />
                     <span className="hidden sm:inline">{user.email}</span>
-                  </div>
+                  </Button>
                   <Button variant="outline" size="sm" onClick={handleSignOut}>
                     <LogOut className="h-4 w-4" />
                     <span className="hidden sm:inline ml-2">Sign Out</span>

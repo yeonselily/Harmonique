@@ -16,6 +16,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import MusicCustomizer, { type MusicSettings } from './MusicCustomizer';
 import JournalEntry, { type JournalEntryData } from './JournalEntry';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 type GeneratedSong = {
   id: string;
@@ -33,6 +35,7 @@ type MusicGeneratorProps = {
 };
 
 const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
+  const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedMusicUrl, setGeneratedMusicUrl] = useState<string | null>(null);
   const [originalAudioUrl, setOriginalAudioUrl] = useState<string | null>(null);
@@ -171,6 +174,25 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
       setGeneratedMusicUrl(url);
       setGeneratedBlob(song.blob);
       setGeneratedSongs(prev => [song, ...prev].slice(0, 10));
+      
+      // Save to Supabase if user is logged in
+      if (user) {
+        try {
+          const { error } = await supabase.from('music_tracks').insert({
+            user_id: user.id,
+            title: song.title,
+            mood: selectedMood as any, // Cast to match Supabase enum
+            audio_features: extractedFeatures as any,
+            music_settings: musicSettings as any,
+          });
+          
+          if (error) {
+            console.error('Error saving track to Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error saving track:', err);
+        }
+      }
       
       toast.success("Music generated", {
         description: "Your custom track is ready to play!"

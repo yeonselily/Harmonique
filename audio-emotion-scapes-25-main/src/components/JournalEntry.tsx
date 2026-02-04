@@ -3,8 +3,10 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { BookOpenText, Save, Plus, Trash } from 'lucide-react';
+import { BookOpenText, Save, Plus, Trash, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface JournalEntryData {
   id: string;
@@ -20,16 +22,20 @@ interface JournalEntryProps {
 }
 
 const JournalEntry = ({ onSave, currentSongId, existingEntries }: JournalEntryProps) => {
+  const { user } = useAuth();
   const [entryContent, setEntryContent] = useState('');
   const [showEntries, setShowEntries] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSaveEntry = () => {
+  const handleSaveEntry = async () => {
     if (!entryContent.trim()) {
       toast.error("Cannot save empty entry", {
         description: "Please write something in your journal before saving."
       });
       return;
     }
+
+    setIsSaving(true);
 
     const newEntry: JournalEntryData = {
       id: `entry-${Date.now().toString(36)}`,
@@ -38,11 +44,32 @@ const JournalEntry = ({ onSave, currentSongId, existingEntries }: JournalEntryPr
       associatedSongId: currentSongId
     };
 
+    // Save to Supabase if user is logged in
+    if (user) {
+      try {
+        const { error } = await supabase.from('journal_entries').insert({
+          user_id: user.id,
+          content: entryContent,
+          associated_track_id: currentSongId || null,
+        });
+        
+        if (error) {
+          console.error('Error saving journal entry:', error);
+          toast.error("Failed to save to cloud", {
+            description: "Entry saved locally but couldn't sync to cloud."
+          });
+        }
+      } catch (err) {
+        console.error('Error saving journal:', err);
+      }
+    }
+
     onSave(newEntry);
     setEntryContent('');
+    setIsSaving(false);
     
     toast.success("Journal entry saved", {
-      description: "Your thoughts have been recorded alongside your music."
+      description: user ? "Your thoughts have been saved to your profile." : "Sign in to save entries to your profile."
     });
   };
 
@@ -97,9 +124,10 @@ const JournalEntry = ({ onSave, currentSongId, existingEntries }: JournalEntryPr
           variant="default" 
           className="w-full flex gap-2 items-center"
           onClick={handleSaveEntry}
+          disabled={isSaving}
         >
-          <Save className="h-4 w-4" />
-          Save Journal Entry
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {isSaving ? "Saving..." : "Save Journal Entry"}
         </Button>
       </CardFooter>
     </Card>
