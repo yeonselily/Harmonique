@@ -3,22 +3,24 @@ import { type Mood } from '@/components/MoodSelector';
 import { type AudioFeatures } from './audioAnalyzer';
 import type { MusicSettings } from '@/components/MusicCustomizer';
 
-// Configure scales for different moods
+// Configure scales for different moods (matching ML model emotions)
 const scales: Record<Mood, string[]> = {
-  happy: ['C4', 'D4', 'E4', 'G4', 'A4', 'C5'],     // Major pentatonic
-  calm: ['D4', 'F4', 'G4', 'A4', 'C5', 'D5'],      // D minor pentatonic
-  energetic: ['E4', 'F#4', 'G#4', 'B4', 'C#5', 'E5'], // E major pentatonic
-  sad: ['A3', 'C4', 'D4', 'E4', 'G4', 'A4'],       // A minor pentatonic
-  angry: ['E4', 'F4', 'G#4', 'B4', 'D5', 'E5'],    // E phrygian dominant
+  happy: ['C4', 'D4', 'E4', 'G4', 'A4', 'C5'],     // Major pentatonic - bright, joyful
+  sad: ['A3', 'C4', 'D4', 'E4', 'G4', 'A4'],       // A minor pentatonic - melancholic
+  angry: ['E4', 'F4', 'G#4', 'B4', 'D5', 'E5'],    // E phrygian dominant - aggressive
+  fear: ['E4', 'F#4', 'G#4', 'B4', 'C#5', 'E5'],   // Tense, anxious feeling
+  disgust: ['D4', 'Eb4', 'F4', 'Ab4', 'Bb4', 'D5'], // Dissonant, unsettling
+  neutral: ['D4', 'F4', 'G4', 'A4', 'C5', 'D5'],   // D minor pentatonic - calm, balanced
 };
 
 // Extended scales for more complexity
 const extendedScales: Record<Mood, string[]> = {
   happy: ['C3', 'D3', 'E3', 'G3', 'A3', 'C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5'],
-  calm: ['D3', 'F3', 'G3', 'A3', 'C4', 'D4', 'F4', 'G4', 'A4', 'C5', 'D5', 'F5'],
-  energetic: ['E3', 'F#3', 'G#3', 'B3', 'C#4', 'E4', 'F#4', 'G#4', 'B4', 'C#5', 'E5', 'F#5'],
   sad: ['A2', 'C3', 'D3', 'E3', 'G3', 'A3', 'C4', 'D4', 'E4', 'G4', 'A4', 'C5'],
   angry: ['E3', 'F3', 'G#3', 'B3', 'D4', 'E4', 'F4', 'G#4', 'B4', 'D5', 'E5', 'F5'],
+  fear: ['E3', 'F#3', 'G#3', 'B3', 'C#4', 'E4', 'F#4', 'G#4', 'B4', 'C#5', 'E5', 'F#5'],
+  disgust: ['D3', 'Eb3', 'F3', 'Ab3', 'Bb3', 'D4', 'Eb4', 'F4', 'Ab4', 'Bb4', 'D5', 'Eb5'],
+  neutral: ['D3', 'F3', 'G3', 'A3', 'C4', 'D4', 'F4', 'G4', 'A4', 'C5', 'D5', 'F5'],
 };
 
 // Genre-specific chord progressions
@@ -69,26 +71,6 @@ const toneSettings: Record<Mood, ToneSettings> = {
     filterRes: 1,
     effectsLevel: 0.3
   },
-  calm: {
-    waveform: 'sine',
-    attack: 0.1,
-    decay: 0.3,
-    sustain: 0.7,
-    release: 3,
-    filterFreq: 1000,
-    filterRes: 0.5,
-    effectsLevel: 0.5
-  },
-  energetic: {
-    waveform: 'sawtooth',
-    attack: 0.02,
-    decay: 0.1,
-    sustain: 0.4,
-    release: 0.8,
-    filterFreq: 3000,
-    filterRes: 2,
-    effectsLevel: 0.6
-  },
   sad: {
     waveform: 'sine',
     attack: 0.2,
@@ -108,16 +90,47 @@ const toneSettings: Record<Mood, ToneSettings> = {
     filterFreq: 4000,
     filterRes: 4,
     effectsLevel: 0.8
+  },
+  fear: {
+    waveform: 'sawtooth',
+    attack: 0.02,
+    decay: 0.1,
+    sustain: 0.4,
+    release: 0.8,
+    filterFreq: 3000,
+    filterRes: 2,
+    effectsLevel: 0.6
+  },
+  disgust: {
+    waveform: 'sawtooth',
+    attack: 0.05,
+    decay: 0.2,
+    sustain: 0.3,
+    release: 1.0,
+    filterFreq: 1500,
+    filterRes: 3,
+    effectsLevel: 0.5
+  },
+  neutral: {
+    waveform: 'sine',
+    attack: 0.1,
+    decay: 0.3,
+    sustain: 0.7,
+    release: 3,
+    filterFreq: 1000,
+    filterRes: 0.5,
+    effectsLevel: 0.5
   }
 };
 
 // Rhythm patterns for different moods
 const rhythmPatterns: Record<Mood, number[]> = {
   happy: [1, 0, 0.7, 0, 1, 0, 0.7, 0],
-  calm: [1, 0, 0, 0.5, 0, 0.7, 0, 0],
-  energetic: [1, 0.5, 1, 0.5, 1, 0.7, 1, 0.5],
   sad: [1, 0, 0, 0, 0.7, 0, 0, 0],
-  angry: [1, 0.8, 0.4, 0.8, 1, 0.6, 0.4, 0.8]
+  angry: [1, 0.8, 0.4, 0.8, 1, 0.6, 0.4, 0.8],
+  fear: [1, 0.5, 1, 0.5, 1, 0.7, 1, 0.5],
+  disgust: [1, 0.3, 0.6, 0.2, 0.8, 0.4, 0.5, 0.3],
+  neutral: [1, 0, 0, 0.5, 0, 0.7, 0, 0],
 };
 
 // Complex rhythms for various genres and complexity levels
