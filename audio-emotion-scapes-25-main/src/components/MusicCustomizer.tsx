@@ -141,6 +141,14 @@ const MusicCustomizer = ({ onSettingsChange, detectedTempo }: MusicCustomizerPro
         </Collapsible>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Important notice about when settings apply */}
+        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-md">
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            <strong>Note:</strong> Settings apply when you click <strong>"New Variation"</strong> or <strong>"Generate Music"</strong>. 
+            Changes won't affect currently playing music.
+          </p>
+        </div>
+
         <div>
           <div className="mb-2 text-sm font-medium">Instruments</div>
           <div className="grid grid-cols-3 gap-2">

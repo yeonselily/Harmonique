@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Music, Share, Download, Play, Pause, List, RefreshCw, AudioWaveform, Settings } from 'lucide-react';
+import { Loader2, Music, Share, Download, Play, Pause, List, RefreshCw, AudioWaveform, Settings, CheckCircle2, User, Save } from 'lucide-react';
 import { type Mood } from './MoodSelector';
 import { toast } from 'sonner';
 import { analyzeAudio, type AudioFeatures } from '@/utils/audioAnalyzer';
@@ -55,6 +55,10 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
     tempo: 0,
     reverb: 0.3
   });
+  const [savedTrackCount, setSavedTrackCount] = useState(0);
+  const [savedJournalCount, setSavedJournalCount] = useState(0);
+  const [isSavingVariation, setIsSavingVariation] = useState(false);
+  const [variationNumber, setVariationNumber] = useState(0);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tonePlaying = useRef<boolean>(false);
@@ -212,18 +216,28 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
           
           if (error) {
             console.error('Error saving track to Supabase:', error);
+            toast.success("Music generated", {
+              description: "Ready to play! (Could not save to profile)"
+            });
           } else if (trackData) {
             // Update the current song ID to the database ID for journal linking
             currentSongId.current = trackData.id;
+            setSavedTrackCount(prev => prev + 1);
+            toast.success("Music generated & saved!", {
+              description: `Track #${savedTrackCount + 1} saved to your profile. You can find it later in your profile history.`
+            });
           }
         } catch (err) {
           console.error('Error saving track:', err);
+          toast.success("Music generated", {
+            description: "Ready to play! (Save failed)"
+          });
         }
+      } else {
+        toast.success("Music generated", {
+          description: "Sign in to save tracks to your profile."
+        });
       }
-      
-      toast.success("Music generated", {
-        description: "Your custom track is ready to play!"
-      });
     } catch (error) {
       console.error("Error generating music:", error);
       toast.error("Generation failed", {
@@ -402,7 +416,7 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
     }
     
     toast.info("Creating variation", {
-      description: "Generating a new variation of your music..."
+      description: "Playing a new variation (not saved yet - click 'Save' to keep it)"
     });
     
     if (tonePlaying.current) {
@@ -418,12 +432,113 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
       await generateMusic(selectedMood, variationFeatures, musicSettings);
       tonePlaying.current = true;
       setIsPlaying(true);
+      setVariationNumber(prev => prev + 1);
       
     } catch (err) {
       console.error("Error creating variation:", err);
       toast.error("Variation failed", {
         description: "There was an error creating a music variation."
       });
+    }
+  };
+
+  // Save current playing variation as a new track
+  const saveCurrentVariation = async () => {
+    if (!selectedMood || !extractedFeatures) {
+      toast.error("Nothing to save", {
+        description: "Generate music first before saving."
+      });
+      return;
+    }
+
+    setIsSavingVariation(true);
+    toast.info("Saving variation", {
+      description: "Recording and saving your current variation..."
+    });
+
+    try {
+      // Render current music to audio file
+      const generatedAudioBlob = await renderToAudioFile(30);
+      
+      const song: GeneratedSong = {
+        id: `song-${Date.now().toString(36)}`,
+        title: `${selectedMood} ${musicSettings.genre} v${variationNumber + 1}`,
+        duration: 30,
+        moodType: selectedMood,
+        blob: generatedAudioBlob,
+        url: '',
+        createdAt: new Date()
+      };
+
+      const url = URL.createObjectURL(song.blob);
+      song.url = url;
+
+      // Update local state
+      if (generatedMusicUrl) {
+        URL.revokeObjectURL(generatedMusicUrl);
+      }
+      setGeneratedMusicUrl(url);
+      setGeneratedBlob(song.blob);
+      setGeneratedSongs(prev => [song, ...prev].slice(0, 10));
+
+      // Save to Supabase if logged in
+      if (user) {
+        try {
+          let audioUrl: string | null = null;
+          
+          const fileName = `${user.id}/${song.id}.wav`;
+          const { error: uploadError } = await supabase.storage
+            .from('music-tracks')
+            .upload(fileName, song.blob, {
+              contentType: 'audio/wav',
+              upsert: true
+            });
+          
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage
+              .from('music-tracks')
+              .getPublicUrl(fileName);
+            audioUrl = urlData.publicUrl;
+          }
+          
+          const { data: trackData, error } = await supabase.from('music_tracks').insert({
+            user_id: user.id,
+            title: song.title,
+            mood: selectedMood as any,
+            audio_features: extractedFeatures as any,
+            music_settings: musicSettings as any,
+            audio_blob_url: audioUrl,
+          }).select('id').single();
+          
+          if (!error && trackData) {
+            currentSongId.current = trackData.id;
+            setSavedTrackCount(prev => prev + 1);
+            toast.success("Variation saved!", {
+              description: `"${song.title}" saved to your profile.`
+            });
+          } else {
+            toast.success("Variation recorded", {
+              description: "Saved locally. Could not sync to profile."
+            });
+          }
+        } catch (err) {
+          console.error('Error saving variation:', err);
+          toast.success("Variation recorded locally", {
+            description: "Could not save to profile."
+          });
+        }
+      } else {
+        toast.success("Variation recorded", {
+          description: "Sign in to save permanently to your profile."
+        });
+      }
+    } catch (err) {
+      console.error("Error saving variation:", err);
+      toast.error("Save failed", {
+        description: "Could not save the variation."
+      });
+    } finally {
+      setIsSavingVariation(false);
     }
   };
   
@@ -434,6 +549,9 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
   const handleSaveJournalEntry = (entry: JournalEntryData) => {
     entry.associatedSongId = currentSongId.current;
     setJournalEntries(prev => [entry, ...prev]);
+    if (user) {
+      setSavedJournalCount(prev => prev + 1);
+    }
   };
 
   const WaveformVisual = () => (
@@ -542,7 +660,18 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
               <div className="space-y-4">
                 {generatedMusicUrl && (
                   <div className="p-4 bg-secondary/20 rounded-md">
-                    <p className="mb-2 font-medium">Your {selectedMood} Music Creation</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-medium">Your {selectedMood} Music Creation</p>
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        className="gap-2"
+                        onClick={handleDownload}
+                      >
+                        <Download className="h-4 w-4" />
+                        Download
+                      </Button>
+                    </div>
                     <audio 
                       controls 
                       className="w-full" 
@@ -557,12 +686,33 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
                         });
                       }}
                     ></audio>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      This is a recorded version of your music. You can also play the live version with the Play button below.
-                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      {user ? (
+                        <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Saved to your profile
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Sign in to save tracks permanently
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
                 
+                {/* Live variation indicator */}
+                {tonePlaying.current && variationNumber > 0 && !generatedMusicUrl && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-md text-center">
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      Playing Variation #{variationNumber} (live preview - not saved yet)
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      Click "Save This Version" to keep it
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex justify-center gap-2 flex-wrap">
                   <Button 
                     variant="outline" 
@@ -580,9 +730,23 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
                     className="gap-2"
                     onClick={regenerateVariation}
                     disabled={!selectedMood || !extractedFeatures}
+                    title="Creates a new variation (live preview only)"
                   >
                     <RefreshCw className="h-4 w-4" />
-                    New Variation
+                    Try New Variation
+                  </Button>
+                  
+                  {/* Save button - prominently shown when there's something to save */}
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    className="gap-2"
+                    onClick={saveCurrentVariation}
+                    disabled={isSavingVariation || !selectedMood || !extractedFeatures}
+                    title="Record and save current music to your profile"
+                  >
+                    {isSavingVariation ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isSavingVariation ? "Saving..." : "Save This Version"}
                   </Button>
                   
                   <Button 
@@ -600,56 +764,67 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
                     variant="outline" 
                     size="sm" 
                     className="gap-2"
-                    onClick={handleDownload}
-                    disabled={!generatedMusicUrl}
-                  >
-                    <Download className="h-4 w-4" />
-                    Download
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="gap-2"
                     onClick={togglePlaylist}
                   >
                     <List className="h-4 w-4" />
-                    {showPlaylist ? "Hide History" : "Show History"}
+                    {showPlaylist ? "Hide History" : "Session History"}
                   </Button>
                 </div>
                 
-                {showPlaylist && (
+                {/* Help text explaining the workflow */}
+                <div className="text-xs text-muted-foreground text-center space-y-1">
+                  <p><strong>Try New Variation</strong> = Preview different versions (live, not saved)</p>
+                  <p><strong>Save This Version</strong> = Record current music and save to profile</p>
+                </div>
+                
+                {/* Session History - shows songs generated in this session */}
+                {showPlaylist && generatedSongs.length > 0 && (
                   <div className="mt-4 border rounded-md">
-                    <div className="p-3 bg-secondary/10 border-b font-medium">Generated Music History</div>
+                    <div className="p-3 bg-secondary/10 border-b font-medium flex items-center justify-between">
+                      <span>This Session's Music</span>
+                      <span className="text-xs text-muted-foreground">{generatedSongs.length} track(s)</span>
+                    </div>
                     <div className="max-h-60 overflow-y-auto">
-                      {generatedSongs.length > 0 ? (
-                        <ul className="divide-y">
-                          {generatedSongs.map((song) => (
-                            <li key={song.id} className="p-3 hover:bg-secondary/20 transition-colors">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium">{song.title}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {song.moodType} • {new Date(song.createdAt).toLocaleString()}
-                                  </p>
-                                </div>
+                      <ul className="divide-y">
+                        {generatedSongs.map((song) => (
+                          <li key={song.id} className="p-3 hover:bg-secondary/20 transition-colors">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{song.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {song.moodType} • {new Date(song.createdAt).toLocaleTimeString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
                                 <Button 
                                   size="sm" 
                                   variant="ghost" 
                                   onClick={() => playSongFromPlaylist(song)}
                                   className="h-8 w-8 p-0"
+                                  title="Play"
                                 >
                                   <Play className="h-4 w-4" />
                                 </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = song.url;
+                                    a.download = `${song.moodType}-${song.title}.wav`;
+                                    a.click();
+                                    toast.success("Downloaded", { description: song.title });
+                                  }}
+                                  className="h-8 w-8 p-0"
+                                  title="Download"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
                               </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="p-4 text-center text-muted-foreground">
-                          No songs generated yet. Create more songs to build your history.
-                        </div>
-                      )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 )}
@@ -691,7 +866,7 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
         </Tabs>
       </CardContent>
       
-      <CardFooter>
+      <CardFooter className="flex-col gap-3">
         {!tonePlaying.current && !generatedMusicUrl && (
           <Button 
             onClick={handleGenerateMusic} 
@@ -701,6 +876,34 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
             {isGenerating && <Loader2 className="h-4 w-4 animate-spin" />}
             Generate Music
           </Button>
+        )}
+        
+        {/* Session Save Status */}
+        {user && (savedTrackCount > 0 || savedJournalCount > 0) && (
+          <div className="w-full p-3 bg-green-500/10 border border-green-500/20 rounded-md">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-sm font-medium">Saved to Your Profile</span>
+            </div>
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {savedTrackCount > 0 && `${savedTrackCount} music track${savedTrackCount > 1 ? 's' : ''}`}
+              {savedTrackCount > 0 && savedJournalCount > 0 && ' • '}
+              {savedJournalCount > 0 && `${savedJournalCount} journal entr${savedJournalCount > 1 ? 'ies' : 'y'}`}
+              {' — '}accessible anytime from your profile
+            </p>
+          </div>
+        )}
+        
+        {!user && generatedMusicUrl && (
+          <div className="w-full p-3 bg-amber-500/10 border border-amber-500/20 rounded-md">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+              <User className="h-4 w-4" />
+              <span className="text-sm font-medium">Not Signed In</span>
+            </div>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Your music is only saved for this session. Sign in to save tracks permanently and access them later.
+            </p>
+          </div>
         )}
       </CardFooter>
     </Card>
