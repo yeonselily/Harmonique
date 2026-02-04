@@ -52,6 +52,7 @@ const modelCache: Map<Gender, ort.InferenceSession> = new Map();
 
 /**
  * Load an ONNX model for the specified gender
+ * Handles models with external data files (.onnx.data)
  */
 export async function loadModel(gender: Gender): Promise<ort.InferenceSession> {
   // Check cache first
@@ -60,16 +61,52 @@ export async function loadModel(gender: Gender): Promise<ort.InferenceSession> {
   }
 
   const modelPath = MODEL_PATHS[gender];
+  const dataPath = `${modelPath}.data`;
   console.log(`Loading ONNX emotion model for ${gender} from ${modelPath}...`);
 
   try {
-    // Configure ONNX Runtime Web
-    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/';
+    // Configure ONNX Runtime Web - use single thread for compatibility
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    ort.env.wasm.numThreads = 1;
     
-    const session = await ort.InferenceSession.create(modelPath, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-    });
+    // Fetch the model file
+    console.log(`Fetching model file: ${modelPath}`);
+    const modelResponse = await fetch(modelPath);
+    if (!modelResponse.ok) {
+      throw new Error(`Failed to fetch model: ${modelResponse.status} ${modelResponse.statusText}`);
+    }
+    const modelArrayBuffer = await modelResponse.arrayBuffer();
+    console.log(`Model file loaded: ${modelArrayBuffer.byteLength} bytes`);
+    
+    // Fetch the external data file
+    console.log(`Fetching external data file: ${dataPath}`);
+    const dataResponse = await fetch(dataPath);
+    if (!dataResponse.ok) {
+      throw new Error(`Failed to fetch external data: ${dataResponse.status} ${dataResponse.statusText}`);
+    }
+    const dataArrayBuffer = await dataResponse.arrayBuffer();
+    console.log(`External data loaded: ${dataArrayBuffer.byteLength} bytes`);
+    
+    // Get the filename for the external data (must match what's referenced in the .onnx file)
+    const modelFileName = modelPath.split('/').pop() || 'model.onnx';
+    const dataFileName = `${modelFileName}.data`;
+    
+    console.log(`Creating session with external data: ${dataFileName}`);
+    
+    // Create session with external data
+    const session = await ort.InferenceSession.create(
+      new Uint8Array(modelArrayBuffer),
+      {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all',
+        externalData: [
+          {
+            path: dataFileName,
+            data: new Uint8Array(dataArrayBuffer),
+          }
+        ],
+      }
+    );
     
     modelCache.set(gender, session);
     console.log(`ONNX model loaded successfully for ${gender}`);
@@ -78,7 +115,7 @@ export async function loadModel(gender: Gender): Promise<ort.InferenceSession> {
     return session;
   } catch (error) {
     console.error(`Failed to load ONNX model for ${gender}:`, error);
-    throw new Error(`Could not load emotion model for ${gender}. Make sure the model file exists at ${modelPath}`);
+    throw new Error(`Could not load emotion model for ${gender}. Make sure the model file exists at ${modelPath}. Error: ${error instanceof Error ? error.message : error}`);
   }
 }
 
@@ -476,28 +513,48 @@ export const analyzeAudio = async (audioBlob: Blob): Promise<AudioFeatures> => {
 
 /**
  * Legacy function: Predict mood using heuristics (fallback)
+ * Improved with more nuanced detection based on audio characteristics
  */
 export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
   const { energy, spectralCentroid, spectralFlatness, zcr, rms } = features;
   
-  if (energy > 0.7) {
-    if (spectralCentroid > 0.6 && zcr > 0.6) {
-      return 'angry';
+  // Calculate a combined "arousal" score (how intense/active the audio is)
+  const arousal = (energy + rms + zcr) / 3;
+  
+  // Calculate a "valence" approximation (bright = positive, dark = negative)
+  const valence = (spectralCentroid + (1 - spectralFlatness)) / 2;
+  
+  console.log('Heuristic features:', { energy, spectralCentroid, spectralFlatness, zcr, rms, arousal, valence });
+  
+  // High arousal emotions
+  if (arousal > 0.5) {
+    if (valence > 0.55) {
+      return 'happy';  // High energy + bright = happy
+    } else if (valence < 0.4) {
+      return 'angry';  // High energy + dark = angry
     } else {
-      return 'fear'; // High energy but not angry = anxious/fear
+      return 'fear';   // High energy + neutral brightness = anxious/fear
     }
   }
   
-  if (energy < 0.4) {
-    if (spectralCentroid < 0.4 && spectralFlatness < 0.3) {
-      return 'sad';
+  // Low arousal emotions
+  if (arousal < 0.35) {
+    if (valence < 0.45) {
+      return 'sad';    // Low energy + dark = sad
+    } else if (valence > 0.55) {
+      return 'happy';  // Low energy + bright = content/happy
     } else {
-      return 'neutral'; // Low energy, balanced = neutral
+      return 'neutral';
     }
   }
   
-  if (energy > 0.4 && energy < 0.7 && spectralCentroid > 0.5 && rms > 0.4) {
+  // Medium arousal - use valence to decide
+  if (valence > 0.55) {
     return 'happy';
+  } else if (valence < 0.4) {
+    return 'sad';
+  } else if (spectralFlatness > 0.5) {
+    return 'disgust';  // Noisy/harsh sound
   }
   
   return 'neutral';

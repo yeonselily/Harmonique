@@ -82,19 +82,20 @@ def load_model(checkpoint_path: str) -> EmotionClassifier:
 
 
 def export_to_onnx(model: EmotionClassifier, output_path: str, model_name: str):
-    """Export PyTorch model to ONNX format."""
+    """Export PyTorch model to ONNX format with embedded weights (no external data files)."""
     
     # Create dummy input matching the expected shape: (batch, seq_len, features)
     # seq_len = 352 (from training), features = 15 (ZCR + RMS + 13 MFCCs)
     dummy_input = torch.randn(1, 352, 15)
     
-    # Export to ONNX
+    # Export to ONNX - using a temporary path first
     onnx_path = os.path.join(output_path, f"{model_name}.onnx")
+    temp_path = os.path.join(output_path, f"{model_name}_temp.onnx")
     
     torch.onnx.export(
         model,
         dummy_input,
-        onnx_path,
+        temp_path,
         export_params=True,
         opset_version=11,
         do_constant_folding=True,
@@ -106,7 +107,46 @@ def export_to_onnx(model: EmotionClassifier, output_path: str, model_name: str):
         }
     )
     
-    print(f"Exported ONNX model to: {onnx_path}")
+    # Load and re-save with embedded weights (no external data)
+    try:
+        import onnx
+        model_onnx = onnx.load(temp_path)
+        
+        # Remove external data file if it was created
+        external_data_path = temp_path + ".data"
+        if os.path.exists(external_data_path):
+            os.remove(external_data_path)
+            print(f"  Removed external data file")
+        
+        # Save with all weights embedded (convert_model_to_external_data=False is default)
+        # But we explicitly load all external data into the model first
+        from onnx.external_data_helper import convert_model_to_external_data, load_external_data_for_model
+        
+        # Try to load any external data back into the model
+        try:
+            load_external_data_for_model(model_onnx, os.path.dirname(temp_path))
+        except:
+            pass  # No external data to load
+        
+        # Save as a single file with all tensors embedded
+        onnx.save_model(
+            model_onnx, 
+            onnx_path,
+            save_as_external_data=False,  # Force embedding all weights
+        )
+        
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Exported ONNX model to: {onnx_path} (weights embedded)")
+        
+    except ImportError:
+        # If onnx package not available, just rename temp file
+        import shutil
+        shutil.move(temp_path, onnx_path)
+        print(f"Exported ONNX model to: {onnx_path}")
+    
     return onnx_path
 
 

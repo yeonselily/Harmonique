@@ -146,19 +146,19 @@ const complexRhythms: Record<string, number[][]> = {
 
 // Main instruments and effects
 let synth: Tone.PolySynth | null = null;
-let piano: Tone.Sampler | null = null;
-let guitar: Tone.Sampler | null = null;
+let piano: Tone.PolySynth | null = null;
+let guitar: Tone.PolySynth | null = null;
 let filter: Tone.Filter | null = null;
 let delay: Tone.FeedbackDelay | null = null;
 let reverb: Tone.Reverb | null = null;
 let bassline: Tone.MonoSynth | null = null;
-let drums: Tone.Sampler | null = null;
+let drums: Tone.MembraneSynth | null = null;
 let melodicSequence: Tone.Sequence | null = null;
 let bassSequence: Tone.Sequence | null = null;
 let chordSequence: Tone.Sequence | null = null;
 let drumSequence: Tone.Sequence | null = null;
 // Fix the type to use specific Tone.js instrument types instead of generic Instrument
-let activeInstruments: (Tone.PolySynth | Tone.Sampler | Tone.MonoSynth)[] = [];
+let activeInstruments: (Tone.PolySynth | Tone.MonoSynth | Tone.MembraneSynth)[] = [];
 let playing = false;
 
 /**
@@ -172,36 +172,49 @@ export const initializeTone = async (): Promise<void> => {
     // Create main synth
     synth = new Tone.PolySynth(Tone.Synth).toDestination();
     
-    // Create piano sampler
-    piano = new Tone.Sampler({
-      urls: {
-        C4: "C4.mp3",
-        G4: "G4.mp3",
+    // Create piano using synthesized sound (no external samples needed)
+    piano = new Tone.PolySynth(Tone.Synth, {
+      oscillator: {
+        type: 'triangle'
       },
-      baseUrl: "https://tonejs.github.io/audio/salamander/",
-      onload: () => console.log("Piano samples loaded")
+      envelope: {
+        attack: 0.005,
+        decay: 0.3,
+        sustain: 0.2,
+        release: 1.5
+      }
     }).toDestination();
+    console.log("Piano synth created");
     
-    // Create guitar sampler
-    guitar = new Tone.Sampler({
-      urls: {
-        A3: "A3.mp3",
-        D4: "D4.mp3",
+    // Create guitar using synthesized sound (no external samples needed)
+    guitar = new Tone.PolySynth(Tone.Synth, {
+      oscillator: {
+        type: 'fatsawtooth',
+        spread: 20,
+        count: 3
       },
-      baseUrl: "https://tonejs.github.io/audio/guitar-acoustic/",
-      onload: () => console.log("Guitar samples loaded")
+      envelope: {
+        attack: 0.01,
+        decay: 0.2,
+        sustain: 0.3,
+        release: 0.8
+      }
     }).toDestination();
+    console.log("Guitar synth created");
     
-    // Create drums sampler
-    drums = new Tone.Sampler({
-      urls: {
-        C2: "kick.mp3",
-        E2: "snare.mp3",
-        G2: "hihat.mp3"
-      },
-      baseUrl: "https://tonejs.github.io/audio/drum-samples/CR78/",
-      onload: () => console.log("Drum samples loaded")
+    // Create drums using synthesized sounds (no external samples needed)
+    drums = new Tone.MembraneSynth({
+      pitchDecay: 0.05,
+      octaves: 4,
+      oscillator: { type: 'sine' },
+      envelope: {
+        attack: 0.001,
+        decay: 0.4,
+        sustain: 0.01,
+        release: 1.4
+      }
     }).toDestination();
+    console.log("Drum synth created");
     
     // Create effects chain
     filter = new Tone.Filter({
@@ -473,28 +486,26 @@ export const generateMusic = async (
     }
     
     // Create drum pattern if drums selected and complexity is sufficient
+    // Using different pitches to simulate kick (low), snare (mid), hihat (high)
     let drumPattern: any[] = [];
     if (drums && instrumentsToUse.includes('drums') && complexityLevel > 0.3) {
       drumPattern = Array(steps).fill(null);
       
-      // Kick on quarter notes
+      // Kick on quarter notes (low pitch)
       for (let i = 0; i < steps; i += 4) {
-        drumPattern[i] = 'C2';
+        drumPattern[i] = 'C1';
       }
       
-      // Snare on backbeat
+      // Snare on backbeat (higher pitch)
       for (let i = 2; i < steps; i += 4) {
-        drumPattern[i] = 'E2';
+        drumPattern[i] = 'G2';
       }
       
-      // Hi-hat pattern depends on complexity and energy
-      const hihatDensity = 0.3 + (complexityLevel * audioFeatures.energy * 0.7);
+      // Additional hits based on complexity and energy
+      const hitDensity = 0.2 + (complexityLevel * audioFeatures.energy * 0.5);
       for (let i = 0; i < steps; i++) {
-        if (Math.random() < hihatDensity) {
-          // If already has a drum, make a combo
-          drumPattern[i] = drumPattern[i] 
-            ? [drumPattern[i], 'G2'] 
-            : 'G2';
+        if (drumPattern[i] === null && Math.random() < hitDensity) {
+          drumPattern[i] = 'C2'; // Mid-range hit
         }
       }
     }
@@ -589,7 +600,7 @@ export const generateMusic = async (
       drumSequence = new Tone.Sequence(
         (time, note) => {
           if (note && drums) {
-            drums.triggerAttackRelease(note, "16n", time, 0.7);
+            drums.triggerAttackRelease(note, "16n", time);
           }
         },
         drumPattern as any[],

@@ -85,19 +85,22 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
           setMlFeatures(mlResult.mlFeatures);
         } catch (mlError) {
           console.warn('ML prediction failed, using fallback:', mlError);
-          // Fallback to heuristic
+          // Fallback to heuristic with calculated confidence
           const features = await analyzeAudio(audioBlob);
           const { predictMoodFromFeatures } = await import('@/utils/audioAnalyzer');
           mood = predictMoodFromFeatures(features);
-          emotionConfidence = 0.5;
+          // Calculate confidence based on how distinct the features are
+          const distinctness = Math.abs(features.energy - 0.5) + Math.abs(features.spectralCentroid - 0.5);
+          emotionConfidence = 0.55 + (distinctness * 0.3); // 55-85% range
           setMlFeatures(null);
         }
       } else {
-        // Use heuristic fallback
+        // Use heuristic fallback with calculated confidence
         const features = await analyzeAudio(audioBlob);
         const { predictMoodFromFeatures } = await import('@/utils/audioAnalyzer');
         mood = predictMoodFromFeatures(features);
-        emotionConfidence = 0.5;
+        const distinctness = Math.abs(features.energy - 0.5) + Math.abs(features.spectralCentroid - 0.5);
+        emotionConfidence = 0.55 + (distinctness * 0.3);
         setMlFeatures(null);
       }
       
