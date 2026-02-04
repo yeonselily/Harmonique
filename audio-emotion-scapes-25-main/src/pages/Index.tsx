@@ -176,7 +176,7 @@ const Index = () => {
           <Card className="mb-6 border-yellow-500/50 bg-yellow-500/10">
             <CardContent className="p-4 text-center">
               <p className="text-amber-600 dark:text-amber-400">
-                Initializing audio engine... Some features may not be available yet.
+                Initializing music generator (Tone.js)... Recording and emotion detection are ready to use.
               </p>
             </CardContent>
           </Card>
@@ -251,12 +251,12 @@ const Index = () => {
               <div className="text-sm bg-yellow-100 dark:bg-yellow-900/30 p-4 rounded-md mt-4">
                 <h3 className="font-medium text-amber-800 dark:text-amber-300">About This Technology</h3>
                 <p className="text-amber-700 dark:text-amber-400">
-                  This application uses Web Audio API for audio analysis and Tone.js for music generation.
-                  The emotion detection extracts audio features to identify the mood in your recording.
+                  This application uses <strong>Meyda.js</strong> to extract audio features (ZCR, RMS, MFCCs) 
+                  which are fed into an <strong>LSTM neural network</strong> running via ONNX Runtime to detect emotions.
                 </p>
                 <p className="text-amber-700 dark:text-amber-400 mt-2">
-                  The music generator creates procedural music based on your recording's characteristics
-                  and your selected mood using synthesizers and digital signal processing.
+                  <strong>Tone.js</strong> then generates procedural music in real-time based on your detected mood, 
+                  creating unique synthesized tracks using digital signal processing.
                 </p>
               </div>
             </div>

@@ -126,11 +126,14 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
   };
 
   // Feature display component
-  const FeatureBar = ({ label, value }: { label: string; value: number }) => (
+  const FeatureBar = ({ label, technical, value }: { label: string; technical?: string; value: number }) => (
     <div className="mb-2">
-      <div className="flex justify-between text-xs mb-1">
-        <span>{label}</span>
-        <span>{Math.round(value * 100)}%</span>
+      <div className="flex justify-between text-xs mb-1 gap-4">
+        <span>
+          {technical}
+          {technical && <span className="text-muted-foreground ml-1">/ {label}</span>}
+        </span>
+        <span className="font-medium shrink-0">{Math.round(value * 100)}%</span>
       </div>
       <div className="w-full bg-secondary/30 h-1.5 rounded-full">
         <div 
@@ -246,10 +249,10 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
                         <BarChart className="h-4 w-4" />
                         <span>Model Input Features</span>
                       </div>
-                      <div className="space-y-1">
-                        <FeatureBar label="Voice Texture" value={mlFeatures.zcr} />
-                        <FeatureBar label="Loudness" value={mlFeatures.rms} />
-                        <FeatureBar label="Vocal Tone" value={mlFeatures.mfccAvg} />
+                      <div className="space-y-2">
+                        <FeatureBar label="Audio Roughness" technical="Zero Crossing Rate" value={mlFeatures.zcr} />
+                        <FeatureBar label="Energy Level" technical="Root Mean Square" value={mlFeatures.rms} />
+                        <FeatureBar label="Vocal Tone" technical="Mel-Frequency Cepstral Coefficients" value={mlFeatures.mfccAvg} />
                       </div>
                     </div>
                   )}
