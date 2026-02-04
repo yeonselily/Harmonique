@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { Music, Sliders, Piano, Guitar, Headphones, Drum } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Music, Sliders, Piano, Guitar, Headphones, Drum, HelpCircle, ChevronDown } from 'lucide-react';
 
 export interface MusicSettings {
   instruments: string[];
@@ -28,6 +29,7 @@ interface MusicCustomizerProps {
 
 const MusicCustomizer = ({ onSettingsChange, detectedTempo }: MusicCustomizerProps) => {
   const [settings, setSettings] = useState<MusicSettings>(defaultSettings);
+  const [helpOpen, setHelpOpen] = useState(false);
   
   const handleInstrumentToggle = (instrument: string) => {
     setSettings(prev => {
@@ -113,10 +115,30 @@ const MusicCustomizer = ({ onSettingsChange, detectedTempo }: MusicCustomizerPro
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          <Sliders className="h-5 w-5" />
-          Music Customization
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Sliders className="h-5 w-5" />
+            Music Customization
+          </CardTitle>
+          <Collapsible open={helpOpen} onOpenChange={setHelpOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground">
+                <HelpCircle className="h-4 w-4" />
+                <span className="text-xs">Help</span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${helpOpen ? 'rotate-180' : ''}`} />
+              </Button>
+            </CollapsibleTrigger>
+          </Collapsible>
+        </div>
+        <Collapsible open={helpOpen} onOpenChange={setHelpOpen}>
+          <CollapsibleContent>
+            <div className="mt-3 p-3 bg-muted/50 rounded-md text-xs text-muted-foreground space-y-2">
+              <p><strong>Defaults:</strong> Synth only, Ambient genre, 50% complexity, auto tempo, 30% reverb</p>
+              <p><strong>How it works:</strong> Changes apply when you generate new music. Toggle instruments, pick a genre, and adjust sliders to customize your sound.</p>
+              <p><strong>Tip:</strong> Higher complexity = more notes and chords. Tempo at 0 = auto-detect from your recording.</p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>

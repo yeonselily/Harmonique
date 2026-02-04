@@ -178,16 +178,43 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
       // Save to Supabase if user is logged in
       if (user) {
         try {
-          const { error } = await supabase.from('music_tracks').insert({
+          let audioUrl: string | null = null;
+          
+          // Upload audio blob to Supabase Storage
+          const fileName = `${user.id}/${song.id}.wav`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('music-tracks')
+            .upload(fileName, song.blob, {
+              contentType: 'audio/wav',
+              upsert: true
+            });
+          
+          if (uploadError) {
+            console.warn('Could not upload audio to storage:', uploadError);
+            // Continue without audio URL - track will still be saved
+          } else {
+            // Get public URL
+            const { data: urlData } = supabase.storage
+              .from('music-tracks')
+              .getPublicUrl(fileName);
+            audioUrl = urlData.publicUrl;
+          }
+          
+          // Save track metadata with audio URL
+          const { data: trackData, error } = await supabase.from('music_tracks').insert({
             user_id: user.id,
             title: song.title,
-            mood: selectedMood as any, // Cast to match Supabase enum
+            mood: selectedMood as any,
             audio_features: extractedFeatures as any,
             music_settings: musicSettings as any,
-          });
+            audio_blob_url: audioUrl,
+          }).select('id').single();
           
           if (error) {
             console.error('Error saving track to Supabase:', error);
+          } else if (trackData) {
+            // Update the current song ID to the database ID for journal linking
+            currentSongId.current = trackData.id;
           }
         } catch (err) {
           console.error('Error saving track:', err);
