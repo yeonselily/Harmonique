@@ -96,15 +96,37 @@ const Profile = () => {
       // Combine tracks with their journal entries
       const trackList = tracks || [];
       const entryList = entries || [];
+
+      const trackListWithAudio = await Promise.all(
+        trackList.map(async (track) => {
+          if (track.audio_blob_url) {
+            return track;
+          }
+
+          const fileName = `${user.id}/${track.id}.wav`;
+          const { data, error } = await supabase.storage
+            .from('music-tracks')
+            .createSignedUrl(fileName, 60 * 60);
+
+          if (error || !data?.signedUrl) {
+            if (error) {
+              console.warn('Error creating signed URL:', error);
+            }
+            return track;
+          }
+
+          return { ...track, audio_blob_url: data.signedUrl };
+        })
+      );
       
-      const combined: CombinedSession[] = trackList.map(track => ({
+      const combined: CombinedSession[] = trackListWithAudio.map(track => ({
         track,
         journals: entryList.filter(e => e.associated_track_id === track.id)
       }));
       
       // Find journals without associated tracks
       const orphans = entryList.filter(e => 
-        !e.associated_track_id || !trackList.find(t => t.id === e.associated_track_id)
+        !e.associated_track_id || !trackListWithAudio.find(t => t.id === e.associated_track_id)
       );
       
       setSessions(combined);

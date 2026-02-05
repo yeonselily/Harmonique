@@ -209,7 +209,7 @@ const MusicGenerator = ({ audioBlob, selectedMood }: MusicGeneratorProps) => {
             user_id: user.id,
             title: song.title,
             mood: selectedMood as any,
-            audio_features: extractedFeatures as any,
+            audio_features: features as any,
             music_settings: musicSettings as any,
             audio_blob_url: audioUrl,
           }).select('id').single();

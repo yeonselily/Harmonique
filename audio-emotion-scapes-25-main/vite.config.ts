@@ -27,9 +27,4 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     exclude: ['onnxruntime-web'],
   },
-  build: {
-    commonjsOptions: {
-      include: [/onnxruntime-web/],
-    },
-  },
 }));
