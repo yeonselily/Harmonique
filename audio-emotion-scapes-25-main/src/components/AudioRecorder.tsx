@@ -10,7 +10,7 @@ type AudioRecorderProps = {
   minRecordingTime?: number;
 };
 
-const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioRecorderProps) => {
+const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 5 }: AudioRecorderProps) => {
   // States for managing recording status and audio data
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -28,6 +28,22 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isRecordingRef = useRef(false);
+
+  const getSupportedMimeType = () => {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate)) {
+        return candidate;
+      }
+    }
+
+    return '';
+  };
 
   // Effect to clean up resources on unmount
   useEffect(() => {
@@ -105,7 +121,7 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
     const dataArray = new Uint8Array(bufferLength);
     
     const updateVisualization = () => {
-      if (!analyserRef.current || !isRecording) return;
+      if (!analyserRef.current || !isRecordingRef.current) return;
       
       requestAnimationFrame(updateVisualization);
       analyserRef.current.getByteFrequencyData(dataArray);
@@ -125,9 +141,13 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
       streamRef.current = stream;
       
       // Setup audio visualization
+      isRecordingRef.current = true;
       setupAudioVisualization(stream);
       
-      const mediaRecorder = new MediaRecorder(stream);
+      const mimeType = getSupportedMimeType();
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       
       mediaRecorder.addEventListener('dataavailable', (event) => {
@@ -135,9 +155,28 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
           audioChunksRef.current.push(event.data);
         }
       });
+
+      mediaRecorder.addEventListener('error', (event) => {
+        console.error('MediaRecorder error:', event);
+        toast.error("Recording failed", {
+          description: "The browser could not finalize the audio recording."
+        });
+      });
       
       mediaRecorder.addEventListener('stop', () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const totalSize = audioChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0);
+        if (totalSize === 0) {
+          console.error('Recorded audio is empty.');
+          setRecordingBlob(null);
+          setAudioUrl(null);
+          toast.error("Recording failed", {
+            description: "The saved recording was empty. Please try recording again."
+          });
+          return;
+        }
+
+        const recordedMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: recordedMimeType });
         const url = URL.createObjectURL(audioBlob);
         
         setRecordingBlob(audioBlob);
@@ -145,6 +184,7 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
         
         // Reset for next recording
         audioChunksRef.current = [];
+        isRecordingRef.current = false;
       });
       
       // Clear any previous recordings
@@ -158,7 +198,7 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
       setIsRecording(true);
       setIsPaused(false);
       
-      mediaRecorder.start();
+      mediaRecorder.start(250);
       startTimer();
       
       toast.success("Recording started", {
@@ -183,14 +223,24 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
       return;
     }
     
-    mediaRecorderRef.current.stop();
+    isRecordingRef.current = false;
+    if (mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.requestData();
+      mediaRecorderRef.current.stop();
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
     
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
+
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => undefined);
+    }
+    analyserRef.current = null;
     
     setIsRecording(false);
     setIsPaused(false);
@@ -241,7 +291,12 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
     
     const a = document.createElement('a');
     a.href = audioUrl;
-    a.download = `recording-${new Date().toISOString()}.wav`;
+    const extension = recordingBlob.type.includes('mp4')
+      ? 'm4a'
+      : recordingBlob.type.includes('ogg')
+        ? 'ogg'
+        : 'webm';
+    a.download = `recording-${new Date().toISOString()}.${extension}`;
     a.click();
     
     toast.success("Recording downloaded", {
@@ -277,7 +332,10 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
                   />
                 </div>
               ) : (
-                <p className="text-muted-foreground">Ready to record your audio...</p>
+                <div className="text-center space-y-1">
+                  <p className="text-muted-foreground">Ready to record your audio</p>
+                  <p className="text-xs text-muted-foreground">Aim for: 8 seconds (5-10 second range)</p>
+                </div>
               )}
             </div>
           )}
@@ -369,14 +427,21 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 30 }: AudioReco
           <div className="w-full mt-2">
             <div className="text-xs text-center text-muted-foreground mb-1">
               {recordingTime < minRecordingTime 
-                ? `Record for at least ${minRecordingTime - recordingTime} more seconds...`
-                : "Minimum recording time reached!"
+                ? `Continue recording (${minRecordingTime - recordingTime}s minimum, aim for 8s)...`
+                : recordingTime < 8
+                ? `Good! Continue recording (aiming for 8s, max 10s)...`
+                : recordingTime <= 10
+                ? "Perfect! You can stop anytime (max 10s)..."
+                : "Recording limit reached (10s max)"
               }
             </div>
             <div className="w-full bg-secondary/30 h-1 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-primary transition-all" 
-                style={{ width: `${Math.min(100, (recordingTime / minRecordingTime) * 100)}%` }}
+                className="h-full transition-all" 
+                style={{ 
+                  width: `${Math.min(100, (recordingTime / 10) * 100)}%`,
+                  backgroundColor: recordingTime < 5 ? '#ef4444' : recordingTime < 8 ? '#eab308' : recordingTime <= 10 ? '#22c55e' : '#ef4444'
+                }}
               ></div>
             </div>
           </div>

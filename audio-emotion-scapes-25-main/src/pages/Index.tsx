@@ -207,7 +207,7 @@ const Index = () => {
               </p>
             </div>
             
-            <AudioRecorder onRecordingComplete={handleRecordingComplete} minRecordingTime={30} />
+            <AudioRecorder onRecordingComplete={handleRecordingComplete} minRecordingTime={5} />
             
             {recordingInfo && (
               <div className="text-sm text-muted-foreground">

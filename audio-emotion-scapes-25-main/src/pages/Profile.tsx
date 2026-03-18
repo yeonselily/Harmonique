@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Music, BookOpenText, User, Play, Pause, Calendar, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Music, BookOpenText, User, Play, Pause, Calendar, Trash2, Plus, Mic, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +24,7 @@ interface MusicTrack {
   mood: string;
   created_at: string;
   audio_blob_url: string | null;
+  original_recording_url?: string | null;
 }
 
 interface JournalEntry {
@@ -46,6 +48,29 @@ const Profile = () => {
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [resolvingTrackId, setResolvingTrackId] = useState<string | null>(null);
+  const STORAGE_BUCKET = 'music-tracks';
+
+  const getGeneratedTrackPath = (userId: string, trackId: string) => `${userId}/${trackId}.webm`;
+  const getOriginalRecordingPath = (userId: string, trackId: string) => `${userId}/${trackId}-original.webm`;
+  const extractStoragePath = (value: string | null | undefined) => {
+    if (!value) return null;
+    if (!value.startsWith('http')) return value;
+
+    try {
+      const url = new URL(value);
+      const marker = `/${STORAGE_BUCKET}/`;
+      const index = url.pathname.indexOf(marker);
+      if (index === -1) return null;
+      return decodeURIComponent(url.pathname.slice(index + marker.length));
+    } catch {
+      return null;
+    }
+  };
+
+  const getStoredGeneratedPath = (track: MusicTrack) => {
+    return extractStoragePath(track.audio_blob_url) || getGeneratedTrackPath(user!.id, track.id);
+  };
 
   useEffect(() => {
     if (!user) {
@@ -99,23 +124,34 @@ const Profile = () => {
 
       const trackListWithAudio = await Promise.all(
         trackList.map(async (track) => {
-          if (track.audio_blob_url) {
-            return track;
-          }
+          let generatedAudioUrl: string | null = null;
+          let originalRecordingUrl: string | null = null;
 
-          const fileName = `${user.id}/${track.id}.wav`;
+          const generatedPath = getStoredGeneratedPath(track);
           const { data, error } = await supabase.storage
-            .from('music-tracks')
-            .createSignedUrl(fileName, 60 * 60);
+            .from(STORAGE_BUCKET)
+            .createSignedUrl(generatedPath, 60 * 60);
 
-          if (error || !data?.signedUrl) {
-            if (error) {
-              console.warn('Error creating signed URL:', error);
-            }
-            return track;
+          if (!error && data?.signedUrl) {
+            generatedAudioUrl = data.signedUrl;
+          } else if (error) {
+            console.warn('Error creating generated track URL:', error);
           }
 
-          return { ...track, audio_blob_url: data.signedUrl };
+          const originalPath = getOriginalRecordingPath(user.id, track.id);
+          const { data: originalData, error: originalError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .createSignedUrl(originalPath, 60 * 60);
+
+          if (!originalError && originalData?.signedUrl) {
+            originalRecordingUrl = originalData.signedUrl;
+          }
+
+          return {
+            ...track,
+            audio_blob_url: generatedAudioUrl,
+            original_recording_url: originalRecordingUrl,
+          };
         })
       );
       
@@ -150,17 +186,22 @@ const Profile = () => {
         setPlayingTrackId(null);
       }
 
-      // Delete from storage if exists
-      if (track.audio_blob_url) {
-        const fileName = `${user.id}/${track.id}.wav`;
-        await supabase.storage.from('music-tracks').remove([fileName]);
-      }
+      const generatedPath = getStoredGeneratedPath(track);
+      const originalPath = getOriginalRecordingPath(user.id, track.id);
+      await supabase.storage.from(STORAGE_BUCKET).remove([generatedPath, originalPath]);
 
       // Delete associated journal entries first (foreign key constraint)
-      await supabase
+      const { error: journalDeleteError } = await supabase
         .from('journal_entries')
         .delete()
         .eq('associated_track_id', track.id);
+      if (journalDeleteError) {
+        console.error('Error deleting associated journals:', journalDeleteError);
+        toast.error("Delete failed", {
+          description: journalDeleteError.message || "Could not delete associated journals"
+        });
+        return;
+      }
 
       // Delete track from database
       const { error } = await supabase
@@ -171,9 +212,13 @@ const Profile = () => {
 
       if (error) {
         console.error('Error deleting track:', error);
+        toast.error("Delete failed", {
+          description: error.message || "Could not delete track"
+        });
       } else {
-        // Update local state
+        // Update local state and refresh from server to avoid stale data
         setSessions(prev => prev.filter(s => s.track.id !== track.id));
+        await fetchUserData();
       }
     } catch (err) {
       console.error('Error deleting track:', err);
@@ -196,6 +241,9 @@ const Profile = () => {
 
       if (error) {
         console.error('Error deleting journal:', error);
+        toast.error("Delete failed", {
+          description: error.message || "Could not delete journal entry"
+        });
       } else {
         if (isOrphan) {
           setOrphanJournals(prev => prev.filter(j => j.id !== journalId));
@@ -206,6 +254,7 @@ const Profile = () => {
             journals: session.journals.filter(j => j.id !== journalId)
           })));
         }
+        await fetchUserData();
       }
     } catch (err) {
       console.error('Error deleting journal:', err);
@@ -214,8 +263,41 @@ const Profile = () => {
     }
   };
 
-  const handlePlayPause = (track: MusicTrack) => {
-    if (!track.audio_blob_url) return;
+  const handlePlayPause = async (track: MusicTrack) => {
+    let audioUrl: string | null = null;
+
+    try {
+      setResolvingTrackId(track.id);
+      const fileName = getStoredGeneratedPath(track);
+      const { data, error } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .createSignedUrl(fileName, 60 * 60);
+
+      if (error || !data?.signedUrl) {
+        console.error('Error creating signed URL:', error);
+        toast.error("Cannot play track", {
+          description: error?.message || "Audio file not found in storage"
+        });
+        return;
+      }
+
+      audioUrl = data.signedUrl;
+      setSessions(prev => prev.map(session => (
+        session.track.id === track.id
+          ? { ...session, track: { ...session.track, audio_blob_url: audioUrl } }
+          : session
+      )));
+    } catch (err) {
+      console.error('Error resolving track URL:', err);
+      toast.error("Cannot load audio", {
+        description: err instanceof Error ? err.message : "Unknown error"
+      });
+      return;
+    } finally {
+      setResolvingTrackId(null);
+    }
+
+    if (!audioUrl) return;
 
     if (playingTrackId === track.id && audioRef) {
       // Pause current track
@@ -228,11 +310,27 @@ const Profile = () => {
       }
       
       // Play new track
-      const audio = new Audio(track.audio_blob_url);
+      const audio = new Audio(audioUrl);
+      audio.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e);
+        toast.error("Playback failed", {
+          description: "Could not play the audio file"
+        });
+        setPlayingTrackId(null);
+      });
       audio.addEventListener('ended', () => setPlayingTrackId(null));
-      audio.play();
-      setAudioRef(audio);
-      setPlayingTrackId(track.id);
+      
+      try {
+        await audio.play();
+        setAudioRef(audio);
+        setPlayingTrackId(track.id);
+      } catch (err) {
+        console.error('Error playing audio:', err);
+        toast.error("Playback error", {
+          description: err instanceof Error ? err.message : "Could not play audio"
+        });
+        setPlayingTrackId(null);
+      }
     }
   };
 
@@ -246,6 +344,38 @@ const Profile = () => {
       neutral: 'bg-gray-500/20 text-gray-600',
     };
     return colors[mood] || 'bg-gray-500/20 text-gray-600';
+  };
+
+  const OriginalRecordingPlayer = ({ url }: { url: string }) => {
+    const [loadError, setLoadError] = useState(false);
+    const audioElRef = useRef<HTMLAudioElement>(null);
+
+    if (loadError) {
+      return (
+        <div className="rounded-md border bg-destructive/5 p-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 text-destructive" />
+            <span>Original recording unavailable (file may be corrupted or missing)</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-md border bg-secondary/10 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Mic className="h-4 w-4 text-muted-foreground" />
+          <p className="text-sm font-medium">Original Recording</p>
+        </div>
+        <audio
+          ref={audioElRef}
+          controls
+          className="w-full"
+          src={url}
+          onError={() => setLoadError(true)}
+        />
+      </div>
+    );
   };
 
   if (!user) {
@@ -322,20 +452,19 @@ const Profile = () => {
                       
                       {/* Action Buttons */}
                       <div className="flex items-center gap-2 shrink-0">
-                        {track.audio_blob_url && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePlayPause(track)}
-                            className="gap-1"
-                          >
-                            {playingTrackId === track.id ? (
-                              <><Pause className="h-4 w-4" /> Pause</>
-                            ) : (
-                              <><Play className="h-4 w-4" /> Play</>
-                            )}
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePlayPause(track)}
+                          className="gap-1"
+                          disabled={resolvingTrackId === track.id}
+                        >
+                          {playingTrackId === track.id ? (
+                            <><Pause className="h-4 w-4" /> Pause</>
+                          ) : (
+                            <><Play className="h-4 w-4" /> Play</>
+                          )}
+                        </Button>
                         
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -352,7 +481,7 @@ const Profile = () => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete this track?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will permanently delete "{track.title}" and all associated journal entries. This action cannot be undone.
+                                This will permanently delete "{track.title}", its generated music file, its original recording, and all associated journal entries. This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -369,7 +498,7 @@ const Profile = () => {
                       </div>
                     </div>
                     
-                    {/* Audio Player (if playing) */}
+                    {/* Generated Track Player */}
                     {playingTrackId === track.id && track.audio_blob_url && (
                       <audio 
                         controls 
@@ -377,7 +506,17 @@ const Profile = () => {
                         src={track.audio_blob_url}
                         autoPlay
                         onEnded={() => setPlayingTrackId(null)}
+                        onError={() => {
+                          setPlayingTrackId(null);
+                          toast.error("Cannot play generated track", {
+                            description: "The audio file may be missing or corrupted. Try deleting and re-generating."
+                          });
+                        }}
                       />
+                    )}
+
+                    {track.original_recording_url && (
+                      <OriginalRecordingPlayer url={track.original_recording_url} />
                     )}
                     
                     {/* Associated Journal Entries */}

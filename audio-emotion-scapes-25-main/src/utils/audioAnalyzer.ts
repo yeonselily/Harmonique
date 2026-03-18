@@ -524,40 +524,65 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
   // Calculate a "valence" approximation (bright = positive, dark = negative)
   const valence = (spectralCentroid + (1 - spectralFlatness)) / 2;
   
-  console.log('Heuristic features:', { energy, spectralCentroid, spectralFlatness, zcr, rms, arousal, valence });
+  // Calculate brightness/harshness
+  const brightness = spectralCentroid;
+  const harshness = spectralFlatness; // Low flatness = harsh/noisy
   
-  // High arousal emotions
-  if (arousal > 0.5) {
-    if (valence > 0.55) {
-      return 'happy';  // High energy + bright = happy
-    } else if (valence < 0.4) {
-      return 'angry';  // High energy + dark = angry
+  console.log('Heuristic features:', { energy, spectralCentroid, spectralFlatness, zcr, rms, arousal, valence, brightness, harshness });
+  
+  // High arousal emotions (energy + intensity)
+  if (arousal > 0.6) {
+    if (valence > 0.65) {
+      return 'happy';  // High energy + bright = happy/excited
+    } else if (valence > 0.5 && brightness > 0.55) {
+      return 'happy';  // Still generally positive
+    } else if (harshness > 0.7 && valence < 0.35) {
+      return 'angry';  // High energy + harsh + dark = angry
+    } else if (harshness < 0.3 && valence < 0.35) {
+      return 'fear';   // High energy + smooth + dark = fear/anxiety
     } else {
-      return 'fear';   // High energy + neutral brightness = anxious/fear
+      return 'energetic';  // Just high energy without clear valence
     }
   }
   
-  // Low arousal emotions
+  // Medium-high arousal
+  if (arousal > 0.45) {
+    if (valence > 0.6) {
+      return 'happy';
+    } else if (valence > 0.45) {
+      return 'calm';   // Medium energy + neutral = calm
+    } else if (harshness > 0.65) {
+      return 'angry';  // Medium energy + harsh = angry
+    } else {
+      return 'calm';   // Default to calm
+    }
+  }
+  
+  // Low arousal emotions (quiet/soft sounds)
   if (arousal < 0.35) {
-    if (valence < 0.45) {
+    if (valence < 0.4) {
       return 'sad';    // Low energy + dark = sad
-    } else if (valence > 0.55) {
-      return 'happy';  // Low energy + bright = content/happy
+    } else if (valence > 0.6) {
+      return 'peaceful';  // Low energy + bright = peaceful/content
     } else {
       return 'neutral';
     }
   }
   
-  // Medium arousal - use valence to decide
-  if (valence > 0.55) {
+  // Medium arousal - balanced use of valence
+  if (valence > 0.6) {
     return 'happy';
-  } else if (valence < 0.4) {
+  } else if (valence > 0.5) {
+    return 'calm';
+  } else if (valence > 0.45) {
+    return 'neutral';
+  } else if (valence > 0.35) {
     return 'sad';
-  } else if (spectralFlatness > 0.5) {
-    return 'disgust';  // Noisy/harsh sound
+  } else if (harshness > 0.6) {
+    return 'angry';
+  } else {
+    return 'sad';
   }
-  
-  return 'neutral';
 };
 
 /**
