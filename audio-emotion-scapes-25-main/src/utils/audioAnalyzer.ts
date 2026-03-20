@@ -541,7 +541,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     } else if (harshness < 0.3 && valence < 0.35) {
       return 'fear';   // High energy + smooth + dark = fear/anxiety
     } else {
-      return 'energetic';  // Just high energy without clear valence
+      return 'neutral';  // Fallback to a supported app mood when arousal is high but ambiguous
     }
   }
   
@@ -550,11 +550,11 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     if (valence > 0.6) {
       return 'happy';
     } else if (valence > 0.45) {
-      return 'calm';   // Medium energy + neutral = calm
+      return 'neutral';   // Medium energy + balanced valence
     } else if (harshness > 0.65) {
       return 'angry';  // Medium energy + harsh = angry
     } else {
-      return 'calm';   // Default to calm
+      return 'neutral';   // Default to a supported balanced mood
     }
   }
   
@@ -563,7 +563,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
     if (valence < 0.4) {
       return 'sad';    // Low energy + dark = sad
     } else if (valence > 0.6) {
-      return 'peaceful';  // Low energy + bright = peaceful/content
+      return 'neutral';  // Bright but low-energy audio maps best to neutral in the supported set
     } else {
       return 'neutral';
     }
@@ -573,7 +573,7 @@ export const predictMoodFromFeatures = (features: AudioFeatures): Mood => {
   if (valence > 0.6) {
     return 'happy';
   } else if (valence > 0.5) {
-    return 'calm';
+    return 'neutral';
   } else if (valence > 0.45) {
     return 'neutral';
   } else if (valence > 0.35) {
