@@ -1,23 +1,49 @@
 # Harmonique
 
-Harmonique is a browser-based audio experience that turns a recorded voice clip into a mood-driven music track. The app records audio in the browser, extracts features such as ZCR, RMS, and MFCCs, runs emotion inference with an ONNX model, and generates procedural music from the detected characteristics and selected mood.
+Harmonique turns a short voice recording into mood-driven procedural music in the browser.
 
-Users can also sign in to save generated tracks, original recordings, and journal entries to Supabase, then revisit or delete them later from the profile page.
+It records audio, extracts acoustic features (ZCR, RMS, MFCCs), runs emotion inference with an ONNX model, and generates music with Tone.js. Signed-in users can save tracks, original recordings, and journal entries in Supabase, then revisit them from a profile page.
+
+## Live Demo
+
+[https://harmonique.vercel.app/](https://harmonique.vercel.app/)
 
 ## Features
 
 - Record audio directly in the browser
-- Detect emotion from voice audio using an ONNX model in the frontend
-- Choose a mood manually or use the AI suggestion
-- Generate procedural music with customizable settings
+- Detect emotion from voice with an in-browser ONNX model
+- Accept the AI mood suggestion or choose a mood manually
+- Generate procedural music with genre, instruments, tempo, complexity, and reverb controls
 - Save generated tracks, original recordings, and journal entries
 - Replay and delete saved sessions from the profile page
+
+## How It Works
+
+1. Record a short voice clip in the browser
+2. Extract audio features with Meyda
+3. Run emotion prediction with a gender-specific ONNX LSTM model
+4. Select a mood (manual or AI-suggested)
+5. Generate procedural music with Tone.js
+6. Optionally sign in and save the session to Supabase
+
+Emotion labels: `happy`, `sad`, `angry`, `fear`, `disgust`, `neutral`
+
+## Tech Stack
+
+| Layer | Tools |
+|-------|--------|
+| Frontend | React, TypeScript, Vite, Tailwind CSS, shadcn/ui, React Router |
+| Audio / ML | Web Audio API, Meyda, ONNX Runtime Web, Tone.js |
+| Backend services | Supabase Auth, Postgres, Storage |
+| Model training | PyTorch (offline training and ONNX export) |
+
+There is no custom Node/Express backend. Inference and music generation run in the browser; Supabase provides auth, database, and file storage.
 
 ## Run Locally
 
 ### Requirements
 
-- Node.js 18+ recommended
+- Node.js 18+
 - npm
 
 ### Install and start
@@ -27,107 +53,83 @@ npm install
 npm run dev
 ```
 
-After the dev server starts, open the local Vite URL shown in the terminal.
+Open the local Vite URL shown in the terminal.
 
-### Build for production
+### Production build
 
 ```sh
 npm run build
 npm run preview
 ```
 
-## Supabase Setup
+## Environment Variables
 
-This project uses Supabase for authentication, database storage, and audio file storage.
-
-For full functionality, your Supabase project should include:
-
-- A `music_tracks` table
-- A `journal_entries` table
-- Row Level Security policies so users can only access their own data
-- A `music-tracks` storage bucket for generated music and original recordings
-
-### Environment Variables
-
-Copy `.env.example` to `.env.local` and provide your Supabase project credentials:
+Copy `.env.example` to `.env.local` and fill in your Supabase credentials:
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+```
 
-## Tech Stack
+Use a Supabase **publishable** key (`sb_publishable_...`), never a secret or `service_role` key.
 
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui
-- React Router
-- Supabase Auth, Postgres, and Storage
-- Web Audio API
-- Meyda for audio feature extraction
-- ONNX Runtime Web for in-browser inference
-- Tone.js for procedural music generation
-- PyTorch for model training and ONNX export
+`.env.local` is gitignored and should not be committed. For Vercel, set the same two variables under **Project → Settings → Environment Variables**.
 
-## High-Level Architecture
+## Supabase Setup
 
-### Frontend
+For full save/history functionality, your Supabase project needs:
 
-The app is a single-page React application built with Vite and TypeScript. The main user flow lives in the homepage and profile page:
+- `music_tracks` table
+- `journal_entries` table
+- Row Level Security so users can only access their own data
+- A `music-tracks` storage bucket for generated audio and original recordings
 
-- `src/pages/Index.tsx` handles recording, mood selection, emotion detection, and music generation
-- `src/pages/Profile.tsx` shows saved tracks and journal history for the signed-in user
+The app works without sign-in for local generation. Saving history requires authentication and the setup above.
+
+## Architecture
+
+### Frontend flow
+
+- `src/pages/Index.tsx` — record → mood → emotion detection → music generation
+- `src/pages/Profile.tsx` — saved tracks and journal history for signed-in users
 
 ### Audio and ML pipeline
 
-1. The browser records audio with the Web Audio API and `MediaRecorder`
-2. `Meyda` extracts audio features such as:
-   - Zero Crossing Rate (ZCR)
-   - Root Mean Square (RMS)
-   - Mel-Frequency Cepstral Coefficients (MFCCs)
-3. `onnxruntime-web` loads the exported emotion model from `public/models/onnx`
-4. The model predicts an emotion label used to inform the music flow
+1. Browser records with Web Audio API / `MediaRecorder`
+2. Meyda extracts ZCR, RMS, and MFCCs
+3. `onnxruntime-web` loads models from `public/models/onnx`
+4. The model predicts an emotion used to inform the music flow
 
 ### Music generation
 
-`Tone.js` creates rule-based procedural music from:
+Tone.js builds rule-based procedural music from:
 
-- the selected mood
+- selected mood
 - extracted audio features
-- customization settings such as genre, instruments, complexity, tempo, and reverb
+- customization settings (genre, instruments, complexity, tempo, reverb)
 
-The app can play this music live and also render a saved audio file for storage and replay.
+Tracks can play live and be rendered to an audio file for storage.
 
 ### Persistence
 
-Supabase is used for:
-
-- authentication
-- structured data in Postgres
-- private audio file storage in the `music-tracks` bucket
-
-There is currently no custom Express or Node backend. Inference and generation run directly in the browser, while Supabase provides the hosted backend services.
+Supabase handles authentication, Postgres rows, and private files in the `music-tracks` bucket.
 
 ## Project Structure
 
 ```text
 src/
-  components/        Reusable UI and feature components
-  contexts/          Shared app state such as authentication
-  integrations/      Supabase client and generated types
+  components/        Feature UI and reusable components
+  contexts/          Shared state (authentication)
+  integrations/      Supabase client and types
   pages/             Route-level pages
-  utils/             Audio analysis and music generation logic
+  utils/             Audio analysis and music generation
 
-public/models/onnx/  ONNX model files used in the browser
-ml_model/            Training/export-related scripts and checkpoints
+public/models/onnx/  ONNX models for browser inference
+ml_model/            Training, export scripts, and evaluation artifacts
 ```
 
 ## Notes
 
-- Emotion detection currently supports these labels: `happy`, `sad`, `angry`, `fear`, `disgust`, and `neutral`
-- Generated tracks are rendered as a fixed-length audio clip in the current implementation
-- The app works without sign-in for local generation, but saving history requires authentication and Supabase setup
-
-## Live Demo 
-Deployed on Vercel: https://harmonique.vercel.app/
+- Generated tracks are fixed-length clips in the current implementation
+- Music generation is procedural (rule-based Tone.js), not an LLM or generative audio model
+- Emotion detection uses a custom-trained LSTM exported to ONNX
