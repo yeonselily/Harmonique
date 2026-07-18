@@ -47,7 +47,13 @@ For full functionality, your Supabase project should include:
 - Row Level Security policies so users can only access their own data
 - A `music-tracks` storage bucket for generated music and original recordings
 
-This repo currently points to a configured Supabase project through `src/integrations/supabase/client.ts`. If you want to connect your own Supabase project, update that client configuration and apply the matching schema and storage policies.
+### Environment Variables
+
+Copy `.env.example` to `.env.local` and provide your Supabase project credentials:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 
 ## Tech Stack
 
