@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loader2, Brain, BarChart, Sparkles } from 'lucide-react';
 import { type Mood } from './MoodSelector';
 import GenderSelector from './GenderSelector';
@@ -263,15 +264,24 @@ const EmotionDetector = ({ audioBlob, onEmotionDetected }: EmotionDetectorProps)
         </div>
       </CardContent>
       <CardFooter>
-        <Button 
-          onClick={handleDetectEmotion} 
-          disabled={isDetecting || !audioBlob || isModelLoading}
-          variant={detectedMood ? "secondary" : "default"}
-          className="w-full gap-2"
-        >
-          {isDetecting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isModelLoading ? "Loading Models..." : detectedMood ? "Detect Again" : "Detect Emotion"}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="w-full inline-flex">
+              <Button 
+                onClick={handleDetectEmotion} 
+                disabled={isDetecting || !audioBlob || isModelLoading}
+                variant={detectedMood ? "secondary" : "default"}
+                className="w-full gap-2"
+              >
+                {isDetecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isModelLoading ? "Loading Models..." : detectedMood ? "Detect Again" : "Detect Emotion"}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Runs the ONNX model on your recording.</p>
+          </TooltipContent>
+        </Tooltip>
       </CardFooter>
     </Card>
   );
