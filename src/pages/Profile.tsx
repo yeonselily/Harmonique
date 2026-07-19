@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Music, BookOpenText, User, Play, Pause, Calendar, Trash2, Plus, Mic, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -45,8 +46,9 @@ const Profile = () => {
   const [sessions, setSessions] = useState<CombinedSession[]>([]);
   const [orphanJournals, setOrphanJournals] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
-  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
+  const generatedAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const [deleting, setDeleting] = useState<string | null>(null);
   const [resolvingTrackId, setResolvingTrackId] = useState<string | null>(null);
   const STORAGE_BUCKET = 'music-tracks';
@@ -82,13 +84,10 @@ const Profile = () => {
   }, [user, navigate]);
 
   useEffect(() => {
-    // Cleanup audio on unmount
     return () => {
-      if (audioRef) {
-        audioRef.pause();
-      }
+      Object.values(generatedAudioRefs.current).forEach((audio) => audio?.pause());
     };
-  }, [audioRef]);
+  }, []);
 
   const fetchUserData = async () => {
     if (!user) return;
@@ -180,10 +179,11 @@ const Profile = () => {
     setDeleting(track.id);
     
     try {
-      // Stop audio if playing
-      if (playingTrackId === track.id && audioRef) {
-        audioRef.pause();
+      // Stop audio if this track's player is open
+      if (activeTrackId === track.id) {
+        generatedAudioRefs.current[track.id]?.pause();
         setPlayingTrackId(null);
+        setActiveTrackId(null);
       }
 
       const generatedPath = getStoredGeneratedPath(track);
@@ -264,7 +264,34 @@ const Profile = () => {
   };
 
   const handlePlayPause = async (track: MusicTrack) => {
-    let audioUrl: string | null = null;
+    // Toggle pause/play on the already-open player (single audio element)
+    if (activeTrackId === track.id) {
+      const el = generatedAudioRefs.current[track.id];
+      if (!el) return;
+
+      if (!el.paused) {
+        el.pause();
+        setPlayingTrackId(null);
+      } else {
+        try {
+          await el.play();
+          setPlayingTrackId(track.id);
+        } catch (err) {
+          console.error('Error playing audio:', err);
+          toast.error("Playback error", {
+            description: err instanceof Error ? err.message : "Could not play audio"
+          });
+        }
+      }
+      return;
+    }
+
+    // Stop whichever track was open before
+    if (activeTrackId) {
+      generatedAudioRefs.current[activeTrackId]?.pause();
+    }
+
+    let audioUrl: string | null = track.audio_blob_url;
 
     try {
       setResolvingTrackId(track.id);
@@ -299,39 +326,8 @@ const Profile = () => {
 
     if (!audioUrl) return;
 
-    if (playingTrackId === track.id && audioRef) {
-      // Pause current track
-      audioRef.pause();
-      setPlayingTrackId(null);
-    } else {
-      // Stop any playing audio
-      if (audioRef) {
-        audioRef.pause();
-      }
-      
-      // Play new track
-      const audio = new Audio(audioUrl);
-      audio.addEventListener('error', (e) => {
-        console.error('Audio playback error:', e);
-        toast.error("Playback failed", {
-          description: "Could not play the audio file"
-        });
-        setPlayingTrackId(null);
-      });
-      audio.addEventListener('ended', () => setPlayingTrackId(null));
-      
-      try {
-        await audio.play();
-        setAudioRef(audio);
-        setPlayingTrackId(track.id);
-      } catch (err) {
-        console.error('Error playing audio:', err);
-        toast.error("Playback error", {
-          description: err instanceof Error ? err.message : "Could not play audio"
-        });
-        setPlayingTrackId(null);
-      }
-    }
+    setActiveTrackId(track.id);
+    setPlayingTrackId(track.id);
   };
 
   const getMoodColor = (mood: string) => {
@@ -348,29 +344,27 @@ const Profile = () => {
 
   const OriginalRecordingPlayer = ({ url }: { url: string }) => {
     const [loadError, setLoadError] = useState(false);
-    const audioElRef = useRef<HTMLAudioElement>(null);
 
     if (loadError) {
       return (
-        <div className="rounded-md border bg-destructive/5 p-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <AlertCircle className="h-4 w-4 text-destructive" />
-            <span>Original recording unavailable (file may be corrupted or missing)</span>
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+            <span>Original recording unavailable</span>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="rounded-md border bg-secondary/10 p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <Mic className="h-4 w-4 text-muted-foreground" />
-          <p className="text-sm font-medium">Original Recording</p>
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Mic className="h-3.5 w-3.5" />
+          <span>Original recording</span>
         </div>
         <audio
-          ref={audioElRef}
           controls
-          className="w-full"
+          className="w-full h-8"
           src={url}
           onError={() => setLoadError(true)}
         />
@@ -467,16 +461,23 @@ const Profile = () => {
                         </Button>
                         
                         <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              disabled={deleting === track.id}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  disabled={deleting === track.id}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete this track and its journals permanently.</p>
+                            </TooltipContent>
+                          </Tooltip>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete this track?</AlertDialogTitle>
@@ -498,21 +499,32 @@ const Profile = () => {
                       </div>
                     </div>
                     
-                    {/* Generated Track Player */}
-                    {playingTrackId === track.id && track.audio_blob_url && (
-                      <audio 
-                        controls 
-                        className="w-full h-8" 
-                        src={track.audio_blob_url}
-                        autoPlay
-                        onEnded={() => setPlayingTrackId(null)}
-                        onError={() => {
-                          setPlayingTrackId(null);
-                          toast.error("Cannot play generated track", {
-                            description: "The audio file may be missing or corrupted. Try deleting and re-generating."
-                          });
-                        }}
-                      />
+                    {/* Generated Track Player — single audio element controlled by Play/Pause */}
+                    {activeTrackId === track.id && track.audio_blob_url && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Generated track</p>
+                        <audio
+                          ref={(el) => {
+                            generatedAudioRefs.current[track.id] = el;
+                          }}
+                          controls
+                          className="w-full h-8"
+                          src={track.audio_blob_url}
+                          autoPlay
+                          onPlay={() => setPlayingTrackId(track.id)}
+                          onPause={() => {
+                            setPlayingTrackId((current) => (current === track.id ? null : current));
+                          }}
+                          onEnded={() => setPlayingTrackId(null)}
+                          onError={() => {
+                            setPlayingTrackId(null);
+                            setActiveTrackId(null);
+                            toast.error("Cannot play generated track", {
+                              description: "The audio file may be missing or corrupted. Try deleting and re-generating."
+                            });
+                          }}
+                        />
+                      </div>
                     )}
 
                     {track.original_recording_url && (
@@ -531,16 +543,23 @@ const Profile = () => {
                             <div key={journal.id} className="bg-muted/30 rounded p-2 text-sm flex items-start gap-2">
                               <p className="whitespace-pre-wrap flex-1">{journal.content}</p>
                               <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-muted-foreground hover:text-destructive h-6 w-6 p-0 shrink-0"
-                                    disabled={deleting === journal.id}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </AlertDialogTrigger>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-muted-foreground hover:text-destructive h-6 w-6 p-0 shrink-0"
+                                        disabled={deleting === journal.id}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Delete this journal entry.</p>
+                                  </TooltipContent>
+                                </Tooltip>
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete this journal entry?</AlertDialogTitle>
@@ -592,16 +611,23 @@ const Profile = () => {
                       </p>
                     </div>
                     <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                          disabled={deleting === entry.id}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive shrink-0"
+                              disabled={deleting === entry.id}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Delete this journal entry.</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete this journal entry?</AlertDialogTitle>
