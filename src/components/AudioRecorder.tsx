@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Play, Pause, Save, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import AudioVisualizer from './AudioVisualizer';
 import { Card, CardContent } from '@/components/ui/card';
@@ -352,15 +353,22 @@ const AudioRecorder = ({ onRecordingComplete, minRecordingTime = 5 }: AudioRecor
         <div className="flex flex-wrap gap-2 justify-center">
           {!isRecording ? (
             <>
-              <Button 
-                size="lg"
-                onClick={startRecording}
-                disabled={isRecording}
-                className="gap-2"
-              >
-                <Mic className="h-5 w-5" />
-                Start Recording
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    size="lg"
+                    onClick={startRecording}
+                    disabled={isRecording}
+                    className="gap-2"
+                  >
+                    <Mic className="h-5 w-5" />
+                    Start Recording
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Record about 5–10 seconds of clear voice.</p>
+                </TooltipContent>
+              </Tooltip>
               
               {recordingBlob && (
                 <>
