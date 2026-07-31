@@ -85,12 +85,10 @@ export type Database = {
       mood_type:
         | "happy"
         | "sad"
-        | "energetic"
-        | "calm"
         | "angry"
-        | "melancholic"
-        | "excited"
-        | "peaceful"
+        | "fear"
+        | "disgust"
+        | "neutral"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -209,12 +207,10 @@ export const Constants = {
       mood_type: [
         "happy",
         "sad",
-        "energetic",
-        "calm",
         "angry",
-        "melancholic",
-        "excited",
-        "peaceful",
+        "fear",
+        "disgust",
+        "neutral",
       ],
     },
   },

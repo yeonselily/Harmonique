@@ -77,12 +77,13 @@ Use a Supabase **publishable** key (`sb_publishable_...`), never a secret or `se
 
 ## Supabase Setup
 
-For full save/history functionality, your Supabase project needs:
+For full save/history functionality, this project's Supabase backend uses:
 
-- `music_tracks` table
-- `journal_entries` table
-- Row Level Security so users can only access their own data
-- A `music-tracks` storage bucket for generated audio and original recordings
+- `music_tracks` and `journal_entries` tables, linked by `associated_track_id`
+- Row Level Security enabled on both tables, with per-user policies for `SELECT`, `INSERT`, `UPDATE`, and `DELETE` scoped to `auth.uid() = user_id`, so a signed-in user can only read or modify their own rows
+- A `music-tracks` storage bucket (private, accessed via time-limited signed URLs) for generated audio and original recordings
+
+To reproduce this setup on a new Supabase project, create the two tables above, enable RLS on each, add the four per-user policies, and create a private `music-tracks` storage bucket.
 
 The app works without sign-in for local generation. Saving history requires authentication and the setup above.
 
